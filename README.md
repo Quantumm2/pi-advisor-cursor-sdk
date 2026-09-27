@@ -2,7 +2,7 @@
 
 <div align="center">
 
-![Pi Advisor consultation in the terminal](https://raw.githubusercontent.com/philipbrembeck/pi-advisor/refs/heads/main/assets/reel-poster.png)
+[![Watch the 40 second reel](https://raw.githubusercontent.com/philipbrembeck/pi-advisor/refs/heads/main/assets/reel-poster.png)](https://github.com/user-attachments/assets/ef18666e-05da-4fb7-a541-53494a28e2fb)
 
 A configurable second-opinion workflow for <a href="https://github.com/earendil-works/pi">Pi</a> coding agents, inspired by the ["Steering Black-Box LLMs with Advisor Models" paper](https://arxiv.org/abs/2510.02453) and Claude's [Advisor](https://code.claude.com/docs/en/advisor) feature.
 
