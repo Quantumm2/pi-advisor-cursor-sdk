@@ -135,6 +135,35 @@ describe("Advisor tool rendering", () => {
     expect(skipped).not.toMatch(SPINNER_PATTERN);
   });
 
+  test("renders the attached-images label with counts", () => {
+    const advisorTool = registerForRendering();
+    const theme = renderTheme();
+    const context = {
+      invalidate: () => {},
+      lastComponent: undefined,
+      state: emptyRenderState(),
+    };
+    const response = advisorTool
+      .renderResult(
+        {
+          content: [{ text: "Advice", type: "text" }],
+          details: {
+            advisor: "provider/advisor",
+            imageBytes: 1_711_015,
+            imageCount: 1,
+            imageOmissions: 1,
+            text: "Advice",
+          },
+        },
+        { isPartial: false },
+        theme,
+        context
+      )
+      .render(120)
+      .join("\n");
+    expect(response).toContain("Images attached · 1 · 1711015 B · 1 withheld");
+  });
+
   test("hides usage details from the response when disabled", () => {
     const advisorTool = registerForRendering();
     const theme = renderTheme();

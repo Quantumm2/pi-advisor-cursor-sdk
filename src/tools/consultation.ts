@@ -99,7 +99,7 @@ const collectAdvisorResponse = async (
             context.preferences?.text,
             context.untracked.map(fileTag),
             context.tracked.map(fileTag)
-          )}${imageNotice}`,
+          )}${imageNotice}${context.images.length ? "\n\n" : ""}`,
           type: "text",
         },
         ...context.images.flatMap(({ image, label }) => [

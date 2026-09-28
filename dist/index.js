@@ -3783,7 +3783,9 @@ Image disclosure: ${context.supportsImages ? `${context.images.length} image(s) 
     {
       content: [
         {
-          text: `${advisorMessageText(context.conversation, outboundQuestion, context.changeText, context.draftText, context.preferences?.text, context.untracked.map(fileTag), context.tracked.map(fileTag))}${imageNotice}`,
+          text: `${advisorMessageText(context.conversation, outboundQuestion, context.changeText, context.draftText, context.preferences?.text, context.untracked.map(fileTag), context.tracked.map(fileTag))}${imageNotice}${context.images.length ? `
+
+` : ""}`,
           type: "text"
         },
         ...context.images.flatMap(({ image, label }) => [

@@ -398,6 +398,53 @@ describe("Advisor image disclosure", () => {
     }
   });
 
+  test("surfaces image forwarding counts on the consultation result", async () => {
+    const faux = registerFauxProvider({
+      api: "pi-advisor-image-counts-test",
+      models: [{ id: "advisor", input: ["text", "image"] }],
+      provider: "pi-advisor-image-counts-test",
+    });
+    try {
+      await withAgentDir(
+        {
+          advisor: "pi-advisor-image-counts-test/advisor",
+          advisorGitContext: "off",
+        },
+        async (agentDir) => {
+          faux.setResponses([() => fauxAssistantMessage("Advice")]);
+          const result = await consultAdvisor(
+            contextFor(agentDir, faux, [userEntry, userEntry])
+          );
+          expect(result.imageCount).toBe(1);
+          expect(result.imagePartsSeen).toBe(2);
+          expect(result.imageBytes).toBeGreaterThan(0);
+          expect(result.imageOmissions).toBeUndefined();
+        }
+      );
+    } finally {
+      faux.unregister();
+    }
+  });
+
+  test("discloses placeholder-only images even when no pixels attach", async () => {
+    const request = await capturedConsultation(
+      ["text", "image"],
+      [
+        {
+          message: {
+            content:
+              "[Image: original 2574x1724, displayed at 2000x1340. Multiply coordinates by 1.29 to map to original image.]",
+            role: "user",
+          },
+          type: "message",
+        },
+      ]
+    );
+    expect(pixels(request)).toEqual([]);
+    expect(text(request)).toContain("Image disclosure:");
+    expect(text(request)).toContain("0 image(s) attached");
+  });
+
   test("explicit image files require consent, Git membership and a real supported format", async () => {
     const cwd = mkdtempSync(join(tmpdir(), "pi-advisor-images-"));
     execFileSync("git", ["init"], { cwd, stdio: "ignore" });
