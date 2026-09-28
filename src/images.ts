@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 
-import type { ImageContent } from "@earendil-works/pi-ai/compat";
+import type { ImageContent, TextContent } from "@earendil-works/pi-ai/compat";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 
 import type { AdvisorToolPolicies } from "./config/types.ts";
@@ -69,21 +69,63 @@ export interface SelectedImage {
   marker: string;
 }
 
+export interface ConversationImageCensus {
+  imagePartsSeen: number;
+  selected: SelectedImage[];
+}
+
+const eligibleImagePart = (part: RecordValue) =>
+  part.type === "image" && isString(part.data) && isString(part.mimeType);
+
+interface ImagePartCensus {
+  parts: number;
+  selected: SelectedImage[];
+}
+
+const entryImageCensus = (
+  content: string | (ImageContent | TextContent)[],
+  conversation: string,
+  nonce: string,
+  seen: Set<string>
+): ImagePartCensus => {
+  let parts = 0;
+  const selected: SelectedImage[] = [];
+  for (const part of contentParts(content)) {
+    if (!isRecordOf(part)) {
+      continue;
+    }
+    if (eligibleImagePart(part)) {
+      parts += 1;
+    }
+    const marker = imageMarker(part, nonce);
+    if (!marker || seen.has(marker) || !conversation.includes(marker)) {
+      continue;
+    }
+    const image = imageFromPart(part);
+    if (image) {
+      seen.add(marker);
+      selected.push({ image, marker });
+    }
+  }
+  return { parts, selected };
+};
+
 export const selectedConversationImages = (
   ctx: ExtensionContext,
   conversation: string,
   policies: AdvisorToolPolicies,
   selectedEntryIds: ReadonlySet<string> | undefined,
   nonce: string
-): SelectedImage[] => {
+): ConversationImageCensus => {
   if (!conversation) {
-    return [];
+    return { imagePartsSeen: 0, selected: [] };
   }
   const entries = selectedEntryIds
     ? ctx.sessionManager.buildContextEntries()
     : ctx.sessionManager.getBranch();
   const images: SelectedImage[] = [];
   const seen = new Set<string>();
+  let imagePartsSeen = 0;
   for (const [index, entry] of entries.entries()) {
     if (
       entry.type !== "message" ||
@@ -101,20 +143,9 @@ export const selectedConversationImages = (
     ) {
       continue;
     }
-    for (const part of contentParts(message.content)) {
-      if (!isRecordOf(part)) {
-        continue;
-      }
-      const marker = imageMarker(part, nonce);
-      if (!marker || seen.has(marker) || !conversation.includes(marker)) {
-        continue;
-      }
-      const image = imageFromPart(part);
-      if (image) {
-        seen.add(marker);
-        images.push({ image, marker });
-      }
-    }
+    const census = entryImageCensus(message.content, conversation, nonce, seen);
+    imagePartsSeen += census.parts;
+    images.push(...census.selected);
   }
-  return images;
+  return { imagePartsSeen, selected: images };
 };

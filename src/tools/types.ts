@@ -47,6 +47,10 @@ export interface AdvisorGateFailure {
 export interface AdvisorConsultationResult {
   adviceId: string;
   draftBytes?: number;
+  imageBytes?: number;
+  imageCount?: number;
+  imageOmissions?: number;
+  imagePartsSeen?: number;
   markdown: string;
   model: string;
   preferenceBytes?: number;
@@ -83,6 +87,10 @@ export interface AdvisorToolDetails {
   adviceId?: string;
   advisor?: string;
   draftBytes?: number;
+  imageBytes?: number;
+  imageCount?: number;
+  imageOmissions?: number;
+  imagePartsSeen?: number;
   jev?: {
     kind: JevSkipKind;
     reason: string;

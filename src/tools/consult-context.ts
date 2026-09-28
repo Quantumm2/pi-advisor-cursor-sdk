@@ -58,8 +58,9 @@ export interface ConsultationContext {
   conversation: string;
   /** Redacted draft text, if a draft was supplied. */
   draftText?: string;
-  images: { image: ImageContent; label: string }[];
   imageOmissions: number;
+  imagePartsSeen: number;
+  images: { image: ImageContent; label: string }[];
   supportsImages: boolean;
   /** Redacted project preferences, if present. */
   preferences?: { bytes: number; text: string };
@@ -184,7 +185,7 @@ export const assembleConsultationContext = async (
       0
     );
   let imageOmissions = untrackedImages.omitted + trackedImages.omitted;
-  const selected = selectedConversationImages(
+  const census = selectedConversationImages(
     ctx,
     curated.conversation,
     advisorToolPoliciesRef,
@@ -193,7 +194,7 @@ export const assembleConsultationContext = async (
       : undefined,
     imageNonce
   );
-  for (const item of selected) {
+  for (const item of census.selected) {
     const bytes = Buffer.from(item.image.data, "base64").length;
     if (
       !supportsImages ||
@@ -211,6 +212,7 @@ export const assembleConsultationContext = async (
     conversation: curated.conversation,
     draftText,
     imageOmissions,
+    imagePartsSeen: census.imagePartsSeen,
     images,
     preferences,
     scout: curated.scout,

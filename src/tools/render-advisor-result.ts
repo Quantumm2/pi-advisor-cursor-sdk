@@ -44,6 +44,9 @@ const attachmentLabels = (details: AdvisorToolDetails | undefined) =>
     details?.untrackedBytes
       ? `Untracked files attached · ${details.untrackedBytes} B`
       : undefined,
+    details?.imageCount
+      ? `Images attached · ${details.imageCount}${details.imageBytes ? ` · ${details.imageBytes} B` : ""}${details.imageOmissions ? ` · ${details.imageOmissions} withheld` : ""}`
+      : undefined,
   ].filter((label): label is string => label !== undefined);
 
 const renderSkipBox = (

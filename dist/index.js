@@ -2326,13 +2326,37 @@ var imageMarker = (part, nonce = "") => {
   const id = createHash("sha256").update(nonce).update(image.data).digest("hex").slice(0, 24);
   return `[Image ref=img_${id}; pixels reviewed only if attached below]`;
 };
+var eligibleImagePart = (part) => part.type === "image" && isString(part.data) && isString(part.mimeType);
+var entryImageCensus = (content, conversation, nonce, seen) => {
+  let parts = 0;
+  const selected = [];
+  for (const part of contentParts(content)) {
+    if (!isRecordOf(part)) {
+      continue;
+    }
+    if (eligibleImagePart(part)) {
+      parts += 1;
+    }
+    const marker = imageMarker(part, nonce);
+    if (!marker || seen.has(marker) || !conversation.includes(marker)) {
+      continue;
+    }
+    const image = imageFromPart(part);
+    if (image) {
+      seen.add(marker);
+      selected.push({ image, marker });
+    }
+  }
+  return { parts, selected };
+};
 var selectedConversationImages = (ctx, conversation, policies, selectedEntryIds, nonce) => {
   if (!conversation) {
-    return [];
+    return { imagePartsSeen: 0, selected: [] };
   }
   const entries = selectedEntryIds ? ctx.sessionManager.buildContextEntries() : ctx.sessionManager.getBranch();
   const images = [];
   const seen = new Set;
+  let imagePartsSeen = 0;
   for (const [index, entry] of entries.entries()) {
     if (entry.type !== "message" || selectedEntryIds && !selectedEntryIds.has(entry.id ?? String(index))) {
       continue;
@@ -2344,22 +2368,11 @@ var selectedConversationImages = (ctx, conversation, policies, selectedEntryIds,
     if (message.role === "toolResult" && (policies[message.toolName] ?? "full") !== "full") {
       continue;
     }
-    for (const part of contentParts(message.content)) {
-      if (!isRecordOf(part)) {
-        continue;
-      }
-      const marker = imageMarker(part, nonce);
-      if (!marker || seen.has(marker) || !conversation.includes(marker)) {
-        continue;
-      }
-      const image = imageFromPart(part);
-      if (image) {
-        seen.add(marker);
-        images.push({ image, marker });
-      }
-    }
+    const census = entryImageCensus(message.content, conversation, nonce, seen);
+    imagePartsSeen += census.parts;
+    images.push(...census.selected);
   }
-  return images;
+  return { imagePartsSeen, selected: images };
 };
 
 // src/image-attachments.ts
@@ -3615,8 +3628,8 @@ var assembleConsultationContext = async (options) => {
   }));
   let remainingBytes = ADVISOR_IMAGES_TOTAL_MAX_BYTES - [...untrackedImages.images, ...trackedImages.images].reduce((sum, item) => sum + item.bytes, 0);
   let imageOmissions = untrackedImages.omitted + trackedImages.omitted;
-  const selected = selectedConversationImages(ctx, curated.conversation, advisorToolPoliciesRef, curated.scout?.ok === true ? new Set(curated.selectedEntryIds) : undefined, imageNonce);
-  for (const item of selected) {
+  const census = selectedConversationImages(ctx, curated.conversation, advisorToolPoliciesRef, curated.scout?.ok === true ? new Set(curated.selectedEntryIds) : undefined, imageNonce);
+  for (const item of census.selected) {
     const bytes = Buffer.from(item.image.data, "base64").length;
     if (!supportsImages || images.length >= ADVISOR_IMAGES_MAX_COUNT || bytes > remainingBytes) {
       imageOmissions += 1;
@@ -3630,6 +3643,7 @@ var assembleConsultationContext = async (options) => {
     conversation: curated.conversation,
     draftText,
     imageOmissions,
+    imagePartsSeen: census.imagePartsSeen,
     images,
     preferences,
     scout: curated.scout,
@@ -3762,7 +3776,7 @@ var collectAdvisorResponse = async (options) => {
     supportsImages: resolved.model.input.includes("image")
   });
   const outboundQuestion = advisorRedactSecretsRef && question !== undefined ? redactSecrets(question) : question;
-  const imageNotice = context.imageOmissions || context.images.length || context.conversation.includes("[Image ") ? `
+  const imageNotice = context.imageOmissions || context.images.length || /\[Image[ :]/u.test(context.conversation) ? `
 
 Image disclosure: ${context.supportsImages ? `${context.images.length} image(s) attached below; ${context.imageOmissions} image(s) withheld by format, consent, or size/count limits` : "Advisor model does not support image input; no pixels were forwarded"}. Only the images explicitly attached below have pixels available. Other image markers, image paths, and text descriptions are not visual evidence.` : "";
   const messages = [
@@ -3797,6 +3811,10 @@ Image disclosure: ${context.supportsImages ? `${context.images.length} image(s) 
   }
   const response = {
     draftBytes: context.draftText ? Buffer.byteLength(context.draftText, "utf-8") : undefined,
+    imageBytes: context.images.reduce((sum, item) => sum + Buffer.from(item.image.data, "base64").length, 0) || undefined,
+    imageCount: context.images.length,
+    imageOmissions: context.imageOmissions || undefined,
+    imagePartsSeen: context.imagePartsSeen || undefined,
     markdown,
     model: advisorRef,
     preferenceBytes: context.preferences?.bytes,
@@ -7716,7 +7734,8 @@ var attachmentLabels = (details) => [
   details?.draftBytes ? `Draft attached · ${details.draftBytes} B` : undefined,
   details?.preferenceBytes ? `Project preferences attached · ${details.preferenceBytes} B` : undefined,
   details?.trackedBytes ? `Tracked files attached · ${details.trackedBytes} B` : undefined,
-  details?.untrackedBytes ? `Untracked files attached · ${details.untrackedBytes} B` : undefined
+  details?.untrackedBytes ? `Untracked files attached · ${details.untrackedBytes} B` : undefined,
+  details?.imageCount ? `Images attached · ${details.imageCount}${details.imageBytes ? ` · ${details.imageBytes} B` : ""}${details.imageOmissions ? ` · ${details.imageOmissions} withheld` : ""}` : undefined
 ].filter((label) => label !== undefined);
 var renderSkipBox = (box, result, expanded, theme) => {
   const details = advisorResultDetails(result);
@@ -7976,6 +7995,10 @@ var registerAskAdvisorTool = ({
             adviceId: result.adviceId,
             advisor: result.model,
             draftBytes: result.draftBytes,
+            imageBytes: result.imageBytes,
+            imageCount: result.imageCount,
+            imageOmissions: result.imageOmissions,
+            imagePartsSeen: result.imagePartsSeen,
             preferenceBytes: result.preferenceBytes,
             question: resolveAdvisorRequest(params.question),
             scout: scoutDetails,

@@ -84,7 +84,7 @@ const collectAdvisorResponse = async (
   const imageNotice =
     context.imageOmissions ||
     context.images.length ||
-    context.conversation.includes("[Image ")
+    /\[Image[ :]/u.test(context.conversation)
       ? `\n\nImage disclosure: ${context.supportsImages ? `${context.images.length} image(s) attached below; ${context.imageOmissions} image(s) withheld by format, consent, or size/count limits` : "Advisor model does not support image input; no pixels were forwarded"}. Only the images explicitly attached below have pixels available. Other image markers, image paths, and text descriptions are not visual evidence.`
       : "";
   const messages: Message[] = [
@@ -130,6 +130,14 @@ const collectAdvisorResponse = async (
     draftBytes: context.draftText
       ? Buffer.byteLength(context.draftText, "utf-8")
       : undefined,
+    imageBytes:
+      context.images.reduce(
+        (sum, item) => sum + Buffer.from(item.image.data, "base64").length,
+        0
+      ) || undefined,
+    imageCount: context.images.length,
+    imageOmissions: context.imageOmissions || undefined,
+    imagePartsSeen: context.imagePartsSeen || undefined,
     markdown,
     model: advisorRef,
     preferenceBytes: context.preferences?.bytes,
