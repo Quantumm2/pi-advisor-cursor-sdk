@@ -109,7 +109,13 @@ describe("Advisor image disclosure", () => {
     ];
     const request = await capturedConsultation(["text", "image"], entries);
     expect(pixels(request)).toEqual([image]);
-    expect(text(request)).toContain("1 image(s) attached");
+    const labelParts = request.content.filter(
+      (part: any) =>
+        part.type === "text" && part.text.includes("attached image pixels")
+    );
+    expect(labelParts).toHaveLength(1);
+    expect(labelParts[0].text.startsWith("\n\n")).toBe(true);
+    expect(text(request)).toContain("2 image(s) attached");
     const toolOnly = await capturedConsultation(
       ["text", "image"],
       [entries[1]]

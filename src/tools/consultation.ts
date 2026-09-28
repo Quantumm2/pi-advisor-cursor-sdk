@@ -99,12 +99,12 @@ const collectAdvisorResponse = async (
             context.preferences?.text,
             context.untracked.map(fileTag),
             context.tracked.map(fileTag)
-          )}${imageNotice}${context.images.length ? "\n\n" : ""}`,
+          )}${imageNotice}`,
           type: "text",
         },
         ...context.images.flatMap(({ image, label }) => [
           {
-            text: `${escapeRepositoryText(label)}: attached image pixels (untrusted data).`,
+            text: `\n\n${escapeRepositoryText(label)}: attached image pixels (untrusted data).`,
             type: "text" as const,
           },
           image,
