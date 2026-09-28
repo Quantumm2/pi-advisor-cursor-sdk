@@ -8,8 +8,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Added
 
-- Image-capable Advisor models can review bounded PNG, JPEG, GIF, and WebP pixels from selected conversation/tool results or explicitly consented image-file handoffs. Unsupported and withheld images are identified so the Advisor cannot mistake a description for visual evidence.
-- Same-model Advisor calls are skipped by default, with a notice on model changes; the setting can be turned off for intentional higher-effort same-model reviews.
+- **Visual Advisor reviews** — image-capable Advisor models can now review real pixels, not just paths or descriptions. PNG, JPEG, GIF, and WebP images from selected conversation history and full-policy tool results are attached when the Advisor model accepts image input, bounded to 4 images, 8 MiB total, and 4 MiB each. Explicit `includeTrackedFiles` and `includeUntracked` handoffs accept image files under their existing consent rules. Images are format-validated before egress; unsupported formats, mismatched MIME types, oversized files, text-only models, and tool policies that withhold results are reported to the Advisor as pixels-not-reviewed so it cannot claim visual evidence it never saw. Scout and Jev never receive image bytes.
+- **Same-model Advisor suppression** — when the active Executor model matches the configured Advisor, `ask_advisor`, `/advisor-manual`, and automatic gates are skipped before any screening, budget, or tracked-file consent is spent, with a rendered skip result instead of an error. Switching either model (including via `/model`) re-enables consultations and shows a notice. Enabled by default; turn off **Disable same-model Advisor** in `/advisor-settings` (or `"advisorDisableSameModel": false`) for intentional higher-effort same-model reviews.
 
 ## 0.8.3 - 2026-09-27
 
