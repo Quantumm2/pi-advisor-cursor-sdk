@@ -1,18 +1,31 @@
+import { randomUUID } from "node:crypto";
+
+import type { ImageContent } from "@earendil-works/pi-ai/compat";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 
-import { readTrackedFiles, readUntrackedFiles } from "../attachments.ts";
+import {
+  readImageFiles,
+  readTrackedFiles,
+  readUntrackedFiles,
+} from "../attachments.ts";
 import type { UntrackedAttachment } from "../attachments.ts";
 import {
   advisorGitContextMaxCharsRef,
   advisorGitContextRef,
   advisorRedactSecretsRef,
   advisorScoutEnabledRef,
+  advisorToolPoliciesRef,
   advisorTrackedFileContentRef,
   advisorUntrackedContentRef,
   contextMaxCharsRef,
 } from "../config/state.ts";
 import { clampGitContextLevel, collectGitContext } from "../git.ts";
 import type { GitContextLevel } from "../git.ts";
+import {
+  ADVISOR_IMAGES_MAX_COUNT,
+  ADVISOR_IMAGES_TOTAL_MAX_BYTES,
+  selectedConversationImages,
+} from "../images.ts";
 import { readProjectPreferences } from "../preferences.ts";
 import { redactAndCapText, redactSecrets } from "../redaction.ts";
 import { curateAdvisorConversation } from "../scout-curation.ts";
@@ -38,6 +51,7 @@ export interface ConsultationContextOptions {
   includeUntracked?: string[];
   onScout?: (event: ScoutLifecycleEvent) => void;
   signal?: AbortSignal;
+  supportsImages?: boolean;
 }
 
 export interface ConsultationContext {
@@ -47,6 +61,9 @@ export interface ConsultationContext {
   conversation: string;
   /** Redacted draft text, if a draft was supplied. */
   draftText?: string;
+  images: { image: ImageContent; label: string }[];
+  imageOmissions: number;
+  supportsImages: boolean;
   /** Redacted project preferences, if present. */
   preferences?: { bytes: number; text: string };
   /** Non-cancelling Scout outcome, when Scout ran. */
@@ -92,9 +109,12 @@ export const assembleConsultationContext = async (
     0,
     contextMaxCharsRef - changeText.length
   );
+  const imageNonce = randomUUID();
   const legacyConversation = advisorRequestConversation(
     ctx,
-    conversationBudget
+    conversationBudget,
+    true,
+    imageNonce
   );
   const curated = await curateAdvisorConversation(
     ctx,
@@ -104,7 +124,8 @@ export const assembleConsultationContext = async (
     advisorScoutEnabledRef,
     runAdvisorScout,
     options.currentInvocationId,
-    conversationBudget
+    conversationBudget,
+    imageNonce
   );
   const preferences = await readProjectPreferences(
     ctx,
@@ -135,12 +156,66 @@ export const assembleConsultationContext = async (
         untracked.reduce((sum, item) => sum + item.bytes, 0)
     )
   );
+  const supportsImages = options.supportsImages ?? false;
+  const untrackedImages = await readImageFiles(
+    ctx.cwd,
+    options.includeUntracked ?? [],
+    supportsImages && advisorUntrackedContentRef,
+    "untracked",
+    ADVISOR_IMAGES_TOTAL_MAX_BYTES,
+    ADVISOR_IMAGES_MAX_COUNT
+  );
+  const trackedImages = await readImageFiles(
+    ctx.cwd,
+    options.includeTracked ?? [],
+    supportsImages && advisorTrackedFileContentRef,
+    "tracked",
+    ADVISOR_IMAGES_TOTAL_MAX_BYTES -
+      untrackedImages.images.reduce((sum, item) => sum + item.bytes, 0),
+    ADVISOR_IMAGES_MAX_COUNT - untrackedImages.images.length
+  );
+  const images = [...untrackedImages.images, ...trackedImages.images].map(
+    (item) => ({
+      image: item.image,
+      label: `File ${JSON.stringify(item.path)}`,
+    })
+  );
+  let remainingBytes =
+    ADVISOR_IMAGES_TOTAL_MAX_BYTES -
+    [...untrackedImages.images, ...trackedImages.images].reduce(
+      (sum, item) => sum + item.bytes,
+      0
+    );
+  let imageOmissions = untrackedImages.omitted + trackedImages.omitted;
+  const selected = selectedConversationImages(
+    ctx,
+    curated.conversation,
+    advisorToolPoliciesRef,
+    curated.scout?.ok === true,
+    imageNonce
+  );
+  for (const item of selected) {
+    const bytes = Buffer.from(item.image.data, "base64").length;
+    if (
+      !supportsImages ||
+      images.length >= ADVISOR_IMAGES_MAX_COUNT ||
+      bytes > remainingBytes
+    ) {
+      imageOmissions += 1;
+      continue;
+    }
+    remainingBytes -= bytes;
+    images.push({ image: item.image, label: item.marker });
+  }
   return {
     changeText,
     conversation: curated.conversation,
     draftText,
+    imageOmissions,
+    images,
     preferences,
     scout: curated.scout,
+    supportsImages,
     tracked,
     untracked,
   };

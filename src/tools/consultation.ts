@@ -9,6 +9,7 @@ import {
   advisorRef,
 } from "../config/state.ts";
 import { loadConfig } from "../config/storage.ts";
+import { escapeRepositoryText } from "../git.ts";
 import type { GitContextLevel } from "../git.ts";
 import { collectTextStream, resolveConfiguredModel } from "../model-stream.ts";
 import { redactSecrets } from "../redaction.ts";
@@ -62,7 +63,10 @@ const collectAdvisorResponse = async (
     throw new Error(accessReason);
   }
   const resolved = await resolveConfiguredModel(ctx, advisorRef, "Advisor");
-  const context = await assembleConsultationContext(options);
+  const context = await assembleConsultationContext({
+    ...options,
+    supportsImages: resolved.model.input.includes("image"),
+  });
 
   // Keep the original question available to local UI callers, but never send
   // its credential-shaped values to the provider when redaction is enabled.
@@ -70,11 +74,17 @@ const collectAdvisorResponse = async (
     advisorRedactSecretsRef && question !== undefined
       ? redactSecrets(question)
       : question;
+  const imageNotice =
+    context.imageOmissions ||
+    context.images.length ||
+    context.conversation.includes("[Image ")
+      ? `\n\nImage disclosure: ${context.supportsImages ? `${context.images.length} image(s) attached below; ${context.imageOmissions} image(s) withheld by format, consent, or size/count limits` : "Advisor model does not support image input; no pixels were forwarded"}. Only the images explicitly attached below have pixels available. Other image markers, image paths, and text descriptions are not visual evidence.`
+      : "";
   const messages: Message[] = [
     {
       content: [
         {
-          text: advisorMessageText(
+          text: `${advisorMessageText(
             context.conversation,
             outboundQuestion,
             context.changeText,
@@ -82,9 +92,16 @@ const collectAdvisorResponse = async (
             context.preferences?.text,
             context.untracked.map(fileTag),
             context.tracked.map(fileTag)
-          ),
+          )}${imageNotice}`,
           type: "text",
         },
+        ...context.images.flatMap(({ image, label }) => [
+          {
+            text: `${escapeRepositoryText(label)}: attached image pixels (untrusted data).`,
+            type: "text" as const,
+          },
+          image,
+        ]),
       ],
       role: "user",
       timestamp: Date.now(),

@@ -51,6 +51,7 @@ export interface InvalidProtocolResult {
 
 export interface BuildScoutManifestOptions {
   currentInvocationId?: string;
+  imageNonce?: string;
   /** @deprecated Use maxManifestBytes for the Scout transport budget. */
   maxBytes?: number;
   /** Maximum reconstructed Advisor conversation characters. */

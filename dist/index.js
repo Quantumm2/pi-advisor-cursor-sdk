@@ -1710,7 +1710,7 @@ var herdrAdvisorActivity = new HerdrAdvisorActivity(sendToHerdr, () => getAdviso
 var herdrAdvisorBlock = new HerdrAdvisorBlock(sendToHerdr, () => getAdvisorSettings().herdrIntegration);
 
 // src/tools/consultation.ts
-import { randomUUID } from "node:crypto";
+import { randomUUID as randomUUID2 } from "node:crypto";
 
 // src/model-stream.ts
 import { stream } from "@earendil-works/pi-ai/compat";
@@ -1859,13 +1859,117 @@ var collectTextStream = async (resolved, options, streamModel = stream) => {
   };
 };
 
+// src/tools/consult-context.ts
+import { randomUUID } from "node:crypto";
+
 // src/attachments.ts
 import { execFileSync as execFileSync2 } from "node:child_process";
 import { constants } from "node:fs";
 import { lstat, open, realpath } from "node:fs/promises";
 import { isAbsolute, relative, resolve } from "node:path";
+
+// src/images.ts
+import { createHash } from "node:crypto";
+var ADVISOR_IMAGE_MAX_BYTES = 4 * 1024 * 1024;
+var ADVISOR_IMAGES_TOTAL_MAX_BYTES = 8 * 1024 * 1024;
+var ADVISOR_IMAGES_MAX_COUNT = 4;
+var isPng = (bytes) => bytes.length >= 45 && bytes.subarray(0, 8).equals(Buffer.from("89504e470d0a1a0a", "hex")) && bytes.readUInt32BE(8) === 13 && bytes.toString("ascii", 12, 16) === "IHDR" && bytes.readUInt32BE(16) > 0 && bytes.readUInt32BE(20) > 0 && bytes.readUInt32BE(bytes.length - 12) === 0 && bytes.toString("ascii", bytes.length - 8, bytes.length - 4) === "IEND";
+var isJpeg = (bytes) => bytes.length >= 4 && bytes[0] === 255 && bytes[1] === 216 && bytes[2] === 255 && bytes.at(-2) === 255 && bytes.at(-1) === 217;
+var isGif = (bytes) => bytes.length >= 14 && ["GIF87a", "GIF89a"].includes(bytes.toString("ascii", 0, 6)) && bytes.readUInt16LE(6) > 0 && bytes.readUInt16LE(8) > 0 && bytes.at(-1) === 59;
+var isWebp = (bytes) => bytes.length >= 16 && bytes.toString("ascii", 0, 4) === "RIFF" && bytes.toString("ascii", 8, 12) === "WEBP" && bytes.readUInt32LE(4) === bytes.length - 8 && ["VP8 ", "VP8L", "VP8X"].includes(bytes.toString("ascii", 12, 16));
+var imageFormat = (bytes) => {
+  if (isPng(bytes)) {
+    return "image/png";
+  }
+  if (isJpeg(bytes)) {
+    return "image/jpeg";
+  }
+  if (isGif(bytes)) {
+    return "image/gif";
+  }
+  if (isWebp(bytes)) {
+    return "image/webp";
+  }
+};
+var imageFromBytes = (bytes, mimeType) => {
+  if (!bytes.length || bytes.length > ADVISOR_IMAGE_MAX_BYTES) {
+    return;
+  }
+  const actual = imageFormat(bytes);
+  if (!actual || mimeType && mimeType !== actual) {
+    return;
+  }
+  return { data: bytes.toString("base64"), mimeType: actual, type: "image" };
+};
+var imageFromPart = (part) => {
+  if (part.type !== "image" || !isString(part.data) || !isString(part.mimeType) || part.data.length > Math.ceil(ADVISOR_IMAGE_MAX_BYTES * 4 / 3) + 4 || !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/u.test(part.data)) {
+    return;
+  }
+  const bytes = Buffer.from(part.data, "base64");
+  if (bytes.toString("base64") !== part.data) {
+    return;
+  }
+  return imageFromBytes(bytes, part.mimeType);
+};
+var imageMarker = (part, nonce = "") => {
+  if (part.type !== "image") {
+    return;
+  }
+  const image = imageFromPart(part);
+  if (!image) {
+    return "[Image omitted: unsupported format, invalid data, or over 4 MiB; pixels not reviewed]";
+  }
+  const id = createHash("sha256").update(nonce).update(image.data).digest("hex").slice(0, 24);
+  return `[Image ref=img_${id}; pixels reviewed only if attached below]`;
+};
+var selectedConversationImages = (ctx, conversation, policies, scoutSelected, nonce) => {
+  if (!conversation) {
+    return [];
+  }
+  const entries = scoutSelected ? ctx.sessionManager.buildContextEntries() : ctx.sessionManager.getBranch();
+  const images = [];
+  const seen = new Set;
+  for (const entry of entries) {
+    if (entry.type !== "message") {
+      continue;
+    }
+    const { message } = entry;
+    if (message.role !== "user" && message.role !== "toolResult") {
+      continue;
+    }
+    if (message.role === "toolResult" && (policies[message.toolName] ?? "full") !== "full") {
+      continue;
+    }
+    for (const part of contentParts(message.content)) {
+      if (!isRecordOf(part)) {
+        continue;
+      }
+      const marker = imageMarker(part, nonce);
+      if (!marker || seen.has(marker) || !conversation.includes(marker)) {
+        continue;
+      }
+      const image = imageFromPart(part);
+      if (image) {
+        seen.add(marker);
+        images.push({ image, marker });
+      }
+    }
+  }
+  return images;
+};
+
+// src/attachments.ts
 var ADVISOR_FILE_MAX_BYTES = 8 * 1024;
 var ADVISOR_FILES_TOTAL_MAX_BYTES = 24 * 1024;
+var imageExtensions = new Map([
+  [".png", "image/png"],
+  [".jpg", "image/jpeg"],
+  [".jpeg", "image/jpeg"],
+  [".gif", "image/gif"],
+  [".webp", "image/webp"]
+]);
+var imageMime = (path) => imageExtensions.get(path.slice(path.lastIndexOf(".")).toLowerCase());
+var imageFileCandidate = (path) => Boolean(imageMime(path)) || /\.(?:avif|bmp|heic|svg|tiff?)$/iu.test(path);
 var PATH_SEGMENTS = /[\\/]/u;
 var within = (root, candidate) => {
   const path = relative(root, candidate);
@@ -1967,7 +2071,7 @@ var readFiles = async (cwd, requested, enabled, redact, kind, totalLimit = ADVIS
   let total = 0;
   for (const name of requested) {
     const normalizedName = normalizeRequestedPath(root, name);
-    if (!normalizedName || unique.has(normalizedName)) {
+    if (!normalizedName || unique.has(normalizedName) || imageFileCandidate(normalizedName)) {
       continue;
     }
     unique.add(normalizedName);
@@ -1990,6 +2094,73 @@ var readFiles = async (cwd, requested, enabled, redact, kind, totalLimit = ADVIS
 };
 var readTrackedFiles = (cwd, requested, enabled, redact, totalLimit = ADVISOR_FILES_TOTAL_MAX_BYTES) => readFiles(cwd, requested, enabled, redact, "tracked", totalLimit);
 var readUntrackedFiles = (cwd, requested, enabled, redact, totalLimit = ADVISOR_FILES_TOTAL_MAX_BYTES) => readFiles(cwd, requested, enabled, redact, "untracked", totalLimit);
+var readImageAttachment = async (root, name, mimeType, remaining) => {
+  const absolute = resolve(root, name);
+  if (!within(root, absolute)) {
+    return;
+  }
+  const stats = await lstat(absolute);
+  if (stats.isSymbolicLink() || !stats.isFile()) {
+    return;
+  }
+  const resolved = await realpath(absolute);
+  if (!within(root, resolved)) {
+    return;
+  }
+  const flags = constants.O_NOFOLLOW ? constants.O_RDONLY + constants.O_NOFOLLOW : constants.O_RDONLY;
+  const file = await open(resolved, flags);
+  try {
+    const opened = await file.stat();
+    if (!opened.isFile() || opened.size > ADVISOR_IMAGE_MAX_BYTES || opened.size > remaining) {
+      return;
+    }
+    const buffer = Buffer.alloc(opened.size + 1);
+    const { bytesRead } = await file.read(buffer, 0, buffer.length, 0);
+    if (bytesRead !== opened.size) {
+      return;
+    }
+    const image = imageFromBytes(buffer.subarray(0, bytesRead), mimeType);
+    return image ? { bytes: bytesRead, image, path: name } : undefined;
+  } finally {
+    await file.close();
+  }
+};
+var readImageFiles = async (cwd, requested, enabled, kind, remainingBytes, remainingCount) => {
+  const names = Array.isArray(requested) ? requested.filter((path) => isString(path) && imageFileCandidate(path)) : [];
+  if (!enabled || !names.length) {
+    return { images: [], omitted: names.length };
+  }
+  const root = await repositoryRoot(cwd);
+  if (!root) {
+    return { images: [], omitted: names.length };
+  }
+  const seen = new Set;
+  const images = [];
+  let omitted = 0;
+  let bytes = 0;
+  for (const path of names) {
+    const name = normalizeRequestedPath(root, path);
+    if (name && seen.has(name)) {
+      continue;
+    }
+    if (name) {
+      seen.add(name);
+    }
+    try {
+      const mime = name && imageMime(name);
+      const image = name && mime && images.length < remainingCount && remainingBytes - bytes > 0 && isPermitted(root, name, kind) ? await readImageAttachment(root, name, mime, remainingBytes - bytes) : undefined;
+      if (image) {
+        images.push(image);
+        bytes += image.bytes;
+      } else {
+        omitted += 1;
+      }
+    } catch {
+      omitted += 1;
+    }
+  }
+  return { images, omitted };
+};
 
 // src/preferences.ts
 import { lstat as lstat2, open as open2, realpath as realpath2 } from "node:fs/promises";
@@ -2029,7 +2200,7 @@ var readProjectPreferences = async (ctx, maxBytes = PREFERENCES_MAX_BYTES, redac
 };
 
 // src/scout-groups.ts
-import { createHash } from "node:crypto";
+import { createHash as createHash2 } from "node:crypto";
 
 // src/tool-result-cap.ts
 var OMITTED_MARKER = "[... omitted tool-result section ...]";
@@ -2108,6 +2279,7 @@ var textFromPart = (part) => {
 };
 var textFrom = (content) => contentParts(content).map(textFromPart).join(`
 `).trim();
+var imageNotes = (content, nonce) => contentParts(content).map((part) => isRecordOf(part) ? imageMarker(part, nonce) : undefined).filter(isString);
 var assistantEntry = (message, policies, redact) => {
   const parts = [];
   const text = textFrom(message.content);
@@ -2134,11 +2306,13 @@ var assistantEntry = (message, policies, redact) => {
   return parts.length > 0 ? `Executor: ${parts.join(`
 `)}` : undefined;
 };
-var toolResultEntry = (message, toolResultMaxLines, toolResultMaxBytes, policies, redact) => {
+var toolResultEntry = (message, toolResultMaxLines, toolResultMaxBytes, policies, redact, describeImages, imageNonce) => {
   const status = message.isError ? "error" : "success";
   const toolName = isString(message.toolName) ? message.toolName : "unknown";
   const policy = policies[toolName] ?? "full";
-  const source = textFrom(message.content);
+  const notes = describeImages ? imageNotes(message.content, imageNonce) : [];
+  const source = [textFrom(message.content), ...notes].filter(Boolean).join(`
+`);
   if (policy === "exclude") {
     return `[Tool Result for ${toolName}] (excluded by Advisor tool policy)`;
   }
@@ -2151,7 +2325,7 @@ var toolResultEntry = (message, toolResultMaxLines, toolResultMaxBytes, policies
   return `[Tool Result for ${toolName}] (${message.isError ? "Error " : ""}output):
 ${capped.content}`;
 };
-var conversationEntry = (entry, toolResultMaxLines, toolResultMaxBytes, policies, redact) => {
+var conversationEntry = (entry, toolResultMaxLines, toolResultMaxBytes, policies, redact, describeImages = false, imageNonce = "") => {
   if (!isRecordOf(entry)) {
     return;
   }
@@ -2163,14 +2337,16 @@ var conversationEntry = (entry, toolResultMaxLines, toolResultMaxBytes, policies
   }
   const { message } = entry;
   if (message.role === "user") {
-    const text = textFrom(message.content);
+    const notes = describeImages ? imageNotes(message.content, imageNonce) : [];
+    const text = [textFrom(message.content), ...notes].filter(Boolean).join(`
+`);
     return text ? `User: ${redact ? redactSecrets(text) : text}` : undefined;
   }
   if (message.role === "assistant") {
     return assistantEntry(message, policies, redact);
   }
   if (message.role === "toolResult" || message.role === "tool") {
-    return toolResultEntry(message, toolResultMaxLines, toolResultMaxBytes, policies, redact);
+    return toolResultEntry(message, toolResultMaxLines, toolResultMaxBytes, policies, redact, describeImages, imageNonce);
   }
 };
 var omissionMarker = (omitted) => `[Older context omitted: ${omitted} complete entr${omitted === 1 ? "y" : "ies"}]`;
@@ -2208,11 +2384,11 @@ var selectRecentEntries = (entries, maxChars) => {
   const prefix = `${marker}${separator}${newestTruncated}${separator}`;
   return `${prefix}${entries.at(-1)?.slice(0, Math.max(0, maxChars - prefix.length)) ?? ""}`.slice(0, maxChars);
 };
-var recentConversation = (ctx, maxChars = 15000, toolResultMaxLines = advisorToolResultMaxLinesRef, toolResultMaxBytes = advisorToolResultMaxBytesRef, policies = advisorToolPoliciesRef, redact = advisorRedactSecretsRef) => {
+var recentConversation = (ctx, maxChars = 15000, toolResultMaxLines = advisorToolResultMaxLinesRef, toolResultMaxBytes = advisorToolResultMaxBytesRef, policies = advisorToolPoliciesRef, redact = advisorRedactSecretsRef, describeImages = false, imageNonce = "") => {
   if (maxChars === 0) {
     return "";
   }
-  const entries = ctx.sessionManager.getBranch().map((entry) => conversationEntry(entry, toolResultMaxLines, toolResultMaxBytes, policies, redact)).filter((entry) => entry !== undefined);
+  const entries = ctx.sessionManager.getBranch().map((entry) => conversationEntry(entry, toolResultMaxLines, toolResultMaxBytes, policies, redact, describeImages, imageNonce)).filter((entry) => entry !== undefined);
   return selectRecentEntries(entries, maxChars);
 };
 
@@ -2312,7 +2488,7 @@ var labelFor = (kind, content) => {
   };
   return boundedLabel(`${prefix[kind]}: ${preview || "(no text)"}`);
 };
-var stableId = (index, entryIds, kind, content) => `g_${createHash("sha256").update(JSON.stringify([index, entryIds, kind, content])).digest("hex").slice(0, 16)}`;
+var stableId = (index, entryIds, kind, content) => `g_${createHash2("sha256").update(JSON.stringify([index, entryIds, kind, content])).digest("hex").slice(0, 16)}`;
 var groupWire = (group) => ({
   bytes: group.bytes,
   content: group.content,
@@ -2341,7 +2517,7 @@ var pendingAdvisorArguments = (part) => {
   }
   return allowed;
 };
-var pendingInvocationDisclosure = (entry, invocationId, toolResultMaxLines, toolResultMaxBytes, policies, redact, disclosed) => {
+var pendingInvocationDisclosure = (entry, invocationId, toolResultMaxLines, toolResultMaxBytes, policies, redact, imageNonce, disclosed) => {
   if (!isRecord(entry.message)) {
     return disclosed;
   }
@@ -2352,7 +2528,7 @@ var pendingInvocationDisclosure = (entry, invocationId, toolResultMaxLines, tool
     }
     return { ...part, arguments: pendingAdvisorArguments(part) };
   });
-  return conversationEntry({ ...entry, message: { ...message, content } }, toolResultMaxLines, toolResultMaxBytes, policies, redact);
+  return conversationEntry({ ...entry, message: { ...message, content } }, toolResultMaxLines, toolResultMaxBytes, policies, redact, true, imageNonce);
 };
 var adjacentResultMismatch = (immediate, index, callIds, callOwners) => {
   if (immediate?.type === "message" && isRecord(immediate.message) && immediate.message.role === "toolResult" && isString(immediate.message.toolCallId) && !callIds.includes(immediate.message.toolCallId) && !callOwners.has(immediate.message.toolCallId)) {
@@ -2377,7 +2553,7 @@ var collectResults = (calls, callIds, index, resultsByCall, consumedResultIndexe
       return `Tool result at context entry ${resultMatch.index} conflicts with call ${callId}.`;
     }
     consumedResultIndexes.add(resultMatch.index);
-    const resultText = conversationEntry(resultMatch.entry, caps.toolResultMaxLines, caps.toolResultMaxBytes, caps.policies, caps.redact);
+    const resultText = conversationEntry(resultMatch.entry, caps.toolResultMaxLines, caps.toolResultMaxBytes, caps.policies, caps.redact, true, caps.imageNonce);
     if (resultText) {
       resultParts.push(resultText);
     }
@@ -2396,7 +2572,7 @@ var missingOutcome = (entry, index, entryId, disclosed, callIds, missing, result
       kind: "omitted"
     };
   }
-  const pendingDisclosed = pendingInvocationDisclosure(entry, currentInvocationId, caps.toolResultMaxLines, caps.toolResultMaxBytes, caps.policies, caps.redact, disclosed);
+  const pendingDisclosed = pendingInvocationDisclosure(entry, currentInvocationId, caps.toolResultMaxLines, caps.toolResultMaxBytes, caps.policies, caps.redact, caps.imageNonce, disclosed);
   return {
     group: createGroup(index, [entryId, ...resultEntryIds], "pending-invocation", [pendingDisclosed ?? disclosed, ...resultParts].join(`
 
@@ -2482,7 +2658,7 @@ var buildGroups = (entries, indexed, caps) => {
     if (!isRecord(entry)) {
       continue;
     }
-    const disclosed = conversationEntry(entry, caps.toolResultMaxLines, caps.toolResultMaxBytes, caps.policies, caps.redact);
+    const disclosed = conversationEntry(entry, caps.toolResultMaxLines, caps.toolResultMaxBytes, caps.policies, caps.redact, true, caps.imageNonce);
     if (!disclosed) {
       continue;
     }
@@ -2548,6 +2724,7 @@ ${synthesis.trim()}` : undefined;
 // src/scout-context.ts
 var resolveCaps = (options) => ({
   currentInvocationId: options.currentInvocationId,
+  imageNonce: options.imageNonce ?? "",
   maxConversationChars: options.maxConversationChars,
   maxGroupBytes: options.maxGroupBytes ?? SCOUT_GROUP_MAX_BYTES,
   maxGroups: options.maxGroups ?? SCOUT_MANIFEST_MAX_GROUPS,
@@ -2994,7 +3171,7 @@ var runAdvisorScout = async (ctx, manifest, parentSignal, onEvent, timeoutMs = a
 };
 
 // src/scout-curation.ts
-var curateAdvisorConversation = async (ctx, legacyConversation, signal, onScout, enabled = advisorScoutEnabledRef, runScout = runAdvisorScout, currentInvocationId, maxChars) => {
+var curateAdvisorConversation = async (ctx, legacyConversation, signal, onScout, enabled = advisorScoutEnabledRef, runScout = runAdvisorScout, currentInvocationId, maxChars, imageNonce = "") => {
   if (!enabled) {
     return { conversation: legacyConversation };
   }
@@ -3003,6 +3180,7 @@ var curateAdvisorConversation = async (ctx, legacyConversation, signal, onScout,
   }
   const built = buildScoutManifest(ctx, {
     currentInvocationId,
+    imageNonce,
     maxConversationChars: maxChars,
     maxManifestBytes: SCOUT_MANIFEST_MAX_BYTES
   });
@@ -3097,7 +3275,7 @@ var advisorRepositoryContext = (result, requested, allowed, budget) => {
 
 `);
 };
-var advisorRequestConversation = (ctx, maxChars = contextMaxCharsRef) => recentConversation(ctx, maxChars);
+var advisorRequestConversation = (ctx, maxChars = contextMaxCharsRef, describeImages = false, imageNonce = "") => recentConversation(ctx, maxChars, undefined, undefined, undefined, undefined, describeImages, imageNonce);
 var advisorInvocationGuidelines = () => {
   if (isSimpleMode()) {
     return [
@@ -3149,18 +3327,41 @@ var assembleConsultationContext = async (options) => {
   const changes = collectGitContext(ctx.cwd, level, gitBudget, advisorRedactSecretsRef ? redactSecrets : undefined);
   const changeText = advisorRepositoryContext(changes, options.gitContext ?? allowed, level, gitBudget);
   const conversationBudget = Math.max(0, contextMaxCharsRef - changeText.length);
-  const legacyConversation = advisorRequestConversation(ctx, conversationBudget);
-  const curated = await curateAdvisorConversation(ctx, legacyConversation, options.signal, options.onScout, advisorScoutEnabledRef, runAdvisorScout, options.currentInvocationId, conversationBudget);
+  const imageNonce = randomUUID();
+  const legacyConversation = advisorRequestConversation(ctx, conversationBudget, true, imageNonce);
+  const curated = await curateAdvisorConversation(ctx, legacyConversation, options.signal, options.onScout, advisorScoutEnabledRef, runAdvisorScout, options.currentInvocationId, conversationBudget, imageNonce);
   const preferences = await readProjectPreferences(ctx, ATTACHMENT_TEXT_MAX_BYTES, advisorRedactSecretsRef);
   const draftText = options.draft ? redactAndCapText(options.draft, ATTACHMENT_TEXT_MAX_BYTES, advisorRedactSecretsRef) : undefined;
   const untracked = await readUntrackedFiles(ctx.cwd, options.includeUntracked ?? [], advisorUntrackedContentRef, advisorRedactSecretsRef);
   const tracked = await readTrackedFiles(ctx.cwd, options.includeTracked ?? [], advisorTrackedFileContentRef, advisorRedactSecretsRef, Math.max(0, ATTACHMENTS_TOTAL_MAX_BYTES - untracked.reduce((sum, item) => sum + item.bytes, 0)));
+  const supportsImages = options.supportsImages ?? false;
+  const untrackedImages = await readImageFiles(ctx.cwd, options.includeUntracked ?? [], supportsImages && advisorUntrackedContentRef, "untracked", ADVISOR_IMAGES_TOTAL_MAX_BYTES, ADVISOR_IMAGES_MAX_COUNT);
+  const trackedImages = await readImageFiles(ctx.cwd, options.includeTracked ?? [], supportsImages && advisorTrackedFileContentRef, "tracked", ADVISOR_IMAGES_TOTAL_MAX_BYTES - untrackedImages.images.reduce((sum, item) => sum + item.bytes, 0), ADVISOR_IMAGES_MAX_COUNT - untrackedImages.images.length);
+  const images = [...untrackedImages.images, ...trackedImages.images].map((item) => ({
+    image: item.image,
+    label: `File ${JSON.stringify(item.path)}`
+  }));
+  let remainingBytes = ADVISOR_IMAGES_TOTAL_MAX_BYTES - [...untrackedImages.images, ...trackedImages.images].reduce((sum, item) => sum + item.bytes, 0);
+  let imageOmissions = untrackedImages.omitted + trackedImages.omitted;
+  const selected = selectedConversationImages(ctx, curated.conversation, advisorToolPoliciesRef, curated.scout?.ok === true, imageNonce);
+  for (const item of selected) {
+    const bytes = Buffer.from(item.image.data, "base64").length;
+    if (!supportsImages || images.length >= ADVISOR_IMAGES_MAX_COUNT || bytes > remainingBytes) {
+      imageOmissions += 1;
+      continue;
+    }
+    remainingBytes -= bytes;
+    images.push({ image: item.image, label: item.marker });
+  }
   return {
     changeText,
     conversation: curated.conversation,
     draftText,
+    imageOmissions,
+    images,
     preferences,
     scout: curated.scout,
+    supportsImages,
     tracked,
     untracked
   };
@@ -3310,15 +3511,28 @@ var collectAdvisorResponse = async (options) => {
     throw new Error(accessReason);
   }
   const resolved = await resolveConfiguredModel(ctx, advisorRef, "Advisor");
-  const context = await assembleConsultationContext(options);
+  const context = await assembleConsultationContext({
+    ...options,
+    supportsImages: resolved.model.input.includes("image")
+  });
   const outboundQuestion = advisorRedactSecretsRef && question !== undefined ? redactSecrets(question) : question;
+  const imageNotice = context.imageOmissions || context.images.length || context.conversation.includes("[Image ") ? `
+
+Image disclosure: ${context.supportsImages ? `${context.images.length} image(s) attached below; ${context.imageOmissions} image(s) withheld by format, consent, or size/count limits` : "Advisor model does not support image input; no pixels were forwarded"}. Only the images explicitly attached below have pixels available. Other image markers, image paths, and text descriptions are not visual evidence.` : "";
   const messages = [
     {
       content: [
         {
-          text: advisorMessageText(context.conversation, outboundQuestion, context.changeText, context.draftText, context.preferences?.text, context.untracked.map(fileTag), context.tracked.map(fileTag)),
+          text: `${advisorMessageText(context.conversation, outboundQuestion, context.changeText, context.draftText, context.preferences?.text, context.untracked.map(fileTag), context.tracked.map(fileTag))}${imageNotice}`,
           type: "text"
-        }
+        },
+        ...context.images.flatMap(({ image, label }) => [
+          {
+            text: `${escapeRepositoryText(label)}: attached image pixels (untrusted data).`,
+            type: "text"
+          },
+          image
+        ])
       ],
       role: "user",
       timestamp: Date.now()
@@ -3364,7 +3578,7 @@ var consultAdvisor = async (ctx, question, signal, onChunk, trigger = "executor-
     signal,
     systemPrompt: ADVISOR_SYSTEM
   });
-  return { ...result, adviceId: randomUUID(), trigger };
+  return { ...result, adviceId: randomUUID2(), trigger };
 };
 var runAdvisorGate = async (ctx, question, trigger = "repeated-tool-call", signal, onChunk, onScout, currentInvocationId) => {
   try {

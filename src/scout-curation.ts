@@ -20,7 +20,8 @@ export const curateAdvisorConversation = async (
   enabled = advisorScoutEnabledRef,
   runScout: typeof runAdvisorScout = runAdvisorScout,
   currentInvocationId?: string,
-  maxChars?: number
+  maxChars?: number,
+  imageNonce = ""
 ): Promise<{
   conversation: string;
   scout?: Exclude<ScoutOutcome, { cancelled: true }>;
@@ -33,6 +34,7 @@ export const curateAdvisorConversation = async (
   }
   const built = buildScoutManifest(ctx, {
     currentInvocationId,
+    imageNonce,
     maxConversationChars: maxChars,
     maxManifestBytes: SCOUT_MANIFEST_MAX_BYTES,
   });

@@ -97,8 +97,20 @@ export const advisorRepositoryContext = (
  */
 export const advisorRequestConversation = (
   ctx: ExtensionContext,
-  maxChars = contextMaxCharsRef
-) => recentConversation(ctx, maxChars);
+  maxChars = contextMaxCharsRef,
+  describeImages = false,
+  imageNonce = ""
+) =>
+  recentConversation(
+    ctx,
+    maxChars,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    describeImages,
+    imageNonce
+  );
 
 export const advisorInvocationGuidelines = () => {
   if (isSimpleMode()) {

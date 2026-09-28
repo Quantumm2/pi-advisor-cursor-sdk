@@ -39,6 +39,7 @@ const resolveCaps = (
   maxManifestBytes: number;
 } => ({
   currentInvocationId: options.currentInvocationId,
+  imageNonce: options.imageNonce ?? "",
   maxConversationChars: options.maxConversationChars,
   maxGroupBytes: options.maxGroupBytes ?? SCOUT_GROUP_MAX_BYTES,
   maxGroups: options.maxGroups ?? SCOUT_MANIFEST_MAX_GROUPS,

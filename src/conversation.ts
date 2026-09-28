@@ -9,6 +9,7 @@ import {
 import type { AdvisorToolPolicies } from "./config/types.ts";
 import { contentParts, isRecordOf, isString } from "./content-utils.ts";
 import type { RecordValue } from "./content-utils.ts";
+import { imageMarker } from "./images.ts";
 import { redactSecrets } from "./redaction.ts";
 import { capToolResult } from "./tool-result-cap.ts";
 
@@ -24,6 +25,11 @@ const textFromPart = <Part>(part: Part): string => {
 
 export const textFrom = <Content>(content: Content): string =>
   contentParts(content).map(textFromPart).join("\n").trim();
+
+const imageNotes = (content: RecordValue["content"], nonce: string) =>
+  contentParts(content)
+    .map((part) => (isRecordOf(part) ? imageMarker(part, nonce) : undefined))
+    .filter(isString);
 
 const assistantEntry = (
   message: RecordValue,
@@ -64,12 +70,17 @@ const toolResultEntry = (
   toolResultMaxLines: number,
   toolResultMaxBytes: number,
   policies: AdvisorToolPolicies,
-  redact: boolean
+  redact: boolean,
+  describeImages: boolean,
+  imageNonce: string
 ): string => {
   const status = message.isError ? "error" : "success";
   const toolName = isString(message.toolName) ? message.toolName : "unknown";
   const policy = policies[toolName] ?? "full";
-  const source = textFrom(message.content);
+  const notes = describeImages ? imageNotes(message.content, imageNonce) : [];
+  const source = [textFrom(message.content), ...notes]
+    .filter(Boolean)
+    .join("\n");
   if (policy === "exclude") {
     return `[Tool Result for ${toolName}] (excluded by Advisor tool policy)`;
   }
@@ -95,7 +106,9 @@ export const conversationEntry = <Entry>(
   toolResultMaxLines: number,
   toolResultMaxBytes: number,
   policies: AdvisorToolPolicies,
-  redact: boolean
+  redact: boolean,
+  describeImages = false,
+  imageNonce = ""
 ): string | undefined => {
   if (!isRecordOf(entry)) {
     return;
@@ -108,7 +121,10 @@ export const conversationEntry = <Entry>(
   }
   const { message } = entry;
   if (message.role === "user") {
-    const text = textFrom(message.content);
+    const notes = describeImages ? imageNotes(message.content, imageNonce) : [];
+    const text = [textFrom(message.content), ...notes]
+      .filter(Boolean)
+      .join("\n");
     return text ? `User: ${redact ? redactSecrets(text) : text}` : undefined;
   }
   if (message.role === "assistant") {
@@ -120,7 +136,9 @@ export const conversationEntry = <Entry>(
       toolResultMaxLines,
       toolResultMaxBytes,
       policies,
-      redact
+      redact,
+      describeImages,
+      imageNonce
     );
   }
 };
@@ -179,7 +197,9 @@ export const recentConversation = (
   toolResultMaxLines = advisorToolResultMaxLinesRef,
   toolResultMaxBytes = advisorToolResultMaxBytesRef,
   policies = advisorToolPoliciesRef,
-  redact = advisorRedactSecretsRef
+  redact = advisorRedactSecretsRef,
+  describeImages = false,
+  imageNonce = ""
 ): string => {
   if (maxChars === 0) {
     return "";
@@ -192,7 +212,9 @@ export const recentConversation = (
         toolResultMaxLines,
         toolResultMaxBytes,
         policies,
-        redact
+        redact,
+        describeImages,
+        imageNonce
       )
     )
     .filter((entry): entry is string => entry !== undefined);

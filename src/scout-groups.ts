@@ -101,6 +101,7 @@ const pendingInvocationDisclosure = (
   toolResultMaxBytes: number,
   policies: AdvisorToolPolicies,
   redact: boolean,
+  imageNonce: string,
   disclosed: string
 ) => {
   if (!isRecord(entry.message)) {
@@ -123,12 +124,15 @@ const pendingInvocationDisclosure = (
     toolResultMaxLines,
     toolResultMaxBytes,
     policies,
-    redact
+    redact,
+    true,
+    imageNonce
   );
 };
 
 export interface DisclosureCaps {
   currentInvocationId?: string;
+  imageNonce: string;
   policies: AdvisorToolPolicies;
   redact: boolean;
   toolResultMaxBytes: number;
@@ -191,7 +195,9 @@ const collectResults = (
       caps.toolResultMaxLines,
       caps.toolResultMaxBytes,
       caps.policies,
-      caps.redact
+      caps.redact,
+      true,
+      caps.imageNonce
     );
     if (resultText) {
       resultParts.push(resultText);
@@ -235,6 +241,7 @@ const missingOutcome = (
     caps.toolResultMaxBytes,
     caps.policies,
     caps.redact,
+    caps.imageNonce,
     disclosed
   );
   return {
@@ -450,7 +457,9 @@ export const buildGroups = (
       caps.toolResultMaxLines,
       caps.toolResultMaxBytes,
       caps.policies,
-      caps.redact
+      caps.redact,
+      true,
+      caps.imageNonce
     );
     if (!disclosed) {
       continue;

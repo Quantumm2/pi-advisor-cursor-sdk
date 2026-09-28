@@ -22,7 +22,8 @@ Keep implementation on a fast model and borrow frontier reasoning only when deci
 - **Separate model and reasoning controls** for the Executor and Advisor.
 - **Model whitelist** that can restrict Advisor calls to exact `provider/model` Executor references.
 - **Advisor usage accounting** with per-response token and cost details, normalized usage in Pi's `/cost` totals, and an optional cumulative footer.
-- **Privacy controls** for conversation history, repository context, explicit file handoff, tool results, secret redaction, and outcome logging.
+- **Privacy controls** for conversation history, repository context, explicit file and image handoff, tool results, secret redaction, and outcome logging.
+- **Visual Advisor reviews** for supported PNG, JPEG, GIF, and WebP images in selected conversation or tool results when the Advisor model accepts images.
 - **Optional persistent activation, Simple mode, session summaries, and Herdr integration.**
 - **Compact searchable `/advisor-settings`** that matches Pi's settings list and saves changes immediately.
 - **Experimental Advisor Scout** that uses the configured Executor model to curate conversation evidence before every Advisor call.
@@ -108,7 +109,7 @@ Advisor Scout is off by default. When enabled in `/advisor-settings` or via `"ad
 
 ## Privacy
 
-Advisor requests can include user messages, tool calls, tool results, targeted questions, and repository information. Repository context is configurable from no access through changed-file summaries to a capped patch; when it is disabled, the Advisor is told so rather than shown an apparently clean tree. Explicit tracked and untracked file contents require separate global opt-ins and are sent as untrusted data. Secret redaction is off by default; when enabled, credential-shaped values in targeted questions are redacted before the provider request. Tools without an explicit policy use full context. Settings are global, so a project cannot silently change them.
+Advisor requests can include user messages, tool calls, tool results, targeted questions, and repository information. Repository context is configurable from no access through changed-file summaries to a capped patch; when it is disabled, the Advisor is told so rather than shown an apparently clean tree. Images from disclosed conversation and full-policy tool results can be sent as pixels only to image-capable Advisor models; Scout sees markers, not pixels. Exact tracked and untracked image files can be attached using `includeTrackedFiles` and `includeUntracked` under their existing separate global consent rules. Images are limited to four and 8 MiB total, with a 4 MiB per-image cap; unsupported, missing, or oversized images are reported as withheld, not reviewed. Explicit tracked and untracked file contents require separate global opt-ins and are sent as untrusted data. Secret redaction is off by default; when enabled, credential-shaped values in targeted questions are redacted before the provider request. Tools without an explicit policy use full context. Settings are global, so a project cannot silently change them.
 
 When Scout is enabled, the Executor model provider also receives bounded Advisor-eligible conversation history. Read [Privacy and data handling](https://github.com/philipbrembeck/pi-advisor/blob/main/docs/privacy.md) before using pi-advisor with sensitive work.
 
