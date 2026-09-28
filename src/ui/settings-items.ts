@@ -282,16 +282,18 @@ export const createSettingsItems = ({
       label: "Always on",
       values: TOGGLE_VALUES,
     },
-    toggle(
-      "disableSameModel",
-      "Disable same-model Advisor",
-      "Skip advice when the active Executor and Advisor use the same provider/model; turn off to allow higher-effort same-model reviews.",
-      settings.disableSameModel,
-      true
-    ),
   ];
   if (settings.simpleMode) {
-    items.push(modelWhitelist);
+    items.push(
+      modelWhitelist,
+      toggle(
+        "disableSameModel",
+        "Disable same-model Advisor",
+        "Skip advice when the active Executor and Advisor use the same provider/model; turn off to allow higher-effort same-model reviews.",
+        settings.disableSameModel,
+        true
+      )
+    );
     return items;
   }
 
@@ -304,6 +306,13 @@ export const createSettingsItems = ({
       values: withCurrentValue(currentEffort(settings.effort), effortLevels),
     },
     modelWhitelist,
+    toggle(
+      "disableSameModel",
+      "Disable same-model Advisor",
+      "Skip advice when the active Executor and Advisor use the same provider/model; turn off to allow higher-effort same-model reviews.",
+      settings.disableSameModel,
+      true
+    ),
     toggle(
       "scoutEnabled",
       "Experimental Advisor Scout",

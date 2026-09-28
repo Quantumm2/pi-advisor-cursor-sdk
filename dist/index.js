@@ -6830,11 +6830,10 @@ var createSettingsItems = ({
       id: "alwaysOn",
       label: "Always on",
       values: TOGGLE_VALUES
-    },
-    toggle("disableSameModel", "Disable same-model Advisor", "Skip advice when the active Executor and Advisor use the same provider/model; turn off to allow higher-effort same-model reviews.", settings.disableSameModel, true)
+    }
   ];
   if (settings.simpleMode) {
-    items.push(modelWhitelist);
+    items.push(modelWhitelist, toggle("disableSameModel", "Disable same-model Advisor", "Skip advice when the active Executor and Advisor use the same provider/model; turn off to allow higher-effort same-model reviews.", settings.disableSameModel, true));
     return items;
   }
   items.push({
@@ -6843,7 +6842,7 @@ var createSettingsItems = ({
     id: "effort",
     label: "Advisor reasoning",
     values: withCurrentValue(currentEffort(settings.effort), effortLevels)
-  }, modelWhitelist, toggle("scoutEnabled", "Experimental Advisor Scout", "Enable the experimental Scout before Advisor calls.", settings.scoutEnabled, false), scoutTimeoutItem(settings), toggle("showUsageDetails", "Show usage and cost details", "Show token usage and cost details in Advisor responses.", settings.showUsageDetails, true), toggle("showUsageFooter", "Show usage in footer", "Show the current Advisor usage summary in the footer.", settings.showUsageFooter, false), toggle("planGate", "Plan gate", "Ask the Advisor to review implementation plans.", settings.planGate, true), toggle("failureGate", "Failure gate", "Ask the Advisor to review repeated failures.", settings.failureGate, true), toggle("completionGate", "Completion gate", "Ask the Advisor to review work before declaring success.", settings.completionGate, true), toggle("collapseResponses", "Collapse long responses", "Collapse long Advisor responses in the transcript.", settings.collapseResponses, false), {
+  }, modelWhitelist, toggle("disableSameModel", "Disable same-model Advisor", "Skip advice when the active Executor and Advisor use the same provider/model; turn off to allow higher-effort same-model reviews.", settings.disableSameModel, true), toggle("scoutEnabled", "Experimental Advisor Scout", "Enable the experimental Scout before Advisor calls.", settings.scoutEnabled, false), scoutTimeoutItem(settings), toggle("showUsageDetails", "Show usage and cost details", "Show token usage and cost details in Advisor responses.", settings.showUsageDetails, true), toggle("showUsageFooter", "Show usage in footer", "Show the current Advisor usage summary in the footer.", settings.showUsageFooter, false), toggle("planGate", "Plan gate", "Ask the Advisor to review implementation plans.", settings.planGate, true), toggle("failureGate", "Failure gate", "Ask the Advisor to review repeated failures.", settings.failureGate, true), toggle("completionGate", "Completion gate", "Ask the Advisor to review work before declaring success.", settings.completionGate, true), toggle("collapseResponses", "Collapse long responses", "Collapse long Advisor responses in the transcript.", settings.collapseResponses, false), {
     currentValue: settings.customRule || "None",
     description: "Add a rule that triggers Advisor involvement.",
     id: "customRule",
