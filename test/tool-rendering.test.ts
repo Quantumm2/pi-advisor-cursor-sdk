@@ -143,7 +143,7 @@ describe("Advisor tool rendering", () => {
       lastComponent: undefined,
       state: emptyRenderState(),
     };
-    const response = advisorTool
+    const single = advisorTool
       .renderResult(
         {
           content: [{ text: "Advice", type: "text" }],
@@ -161,7 +161,27 @@ describe("Advisor tool rendering", () => {
       )
       .render(120)
       .join("\n");
-    expect(response).toContain("Images attached · 1 · 1711015 B · 1 withheld");
+    expect(single).toContain("1 image attached · 1.6 MiB · 1 withheld");
+    const multiple = advisorTool
+      .renderResult(
+        {
+          content: [{ text: "Advice", type: "text" }],
+          details: {
+            advisor: "provider/advisor",
+            draftBytes: 512,
+            imageBytes: 3_500_000,
+            imageCount: 2,
+            text: "Advice",
+          },
+        },
+        { isPartial: false },
+        theme,
+        context
+      )
+      .render(120)
+      .join("\n");
+    expect(multiple).toContain("2 images attached · 3.3 MiB");
+    expect(multiple).toContain("Draft attached · 512 B");
   });
 
   test("hides usage details from the response when disabled", () => {

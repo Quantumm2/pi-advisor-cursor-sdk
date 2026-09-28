@@ -30,22 +30,35 @@ const syncRenderPhase = (context: AdvisorToolContext, phase: string) => {
   context.state.phase = phase;
 };
 
+const formatByteSize = (bytes: number): string => {
+  if (bytes >= 1024 ** 3) {
+    return `${(bytes / 1024 ** 3).toFixed(1)} GiB`;
+  }
+  if (bytes >= 1024 ** 2) {
+    return `${(bytes / 1024 ** 2).toFixed(1)} MiB`;
+  }
+  if (bytes >= 1024) {
+    return `${Math.round(bytes / 1024)} KiB`;
+  }
+  return `${bytes} B`;
+};
+
 const attachmentLabels = (details: AdvisorToolDetails | undefined) =>
   [
     details?.draftBytes
-      ? `Draft attached · ${details.draftBytes} B`
+      ? `Draft attached · ${formatByteSize(details.draftBytes)}`
       : undefined,
     details?.preferenceBytes
-      ? `Project preferences attached · ${details.preferenceBytes} B`
+      ? `Project preferences attached · ${formatByteSize(details.preferenceBytes)}`
       : undefined,
     details?.trackedBytes
-      ? `Tracked files attached · ${details.trackedBytes} B`
+      ? `Tracked files attached · ${formatByteSize(details.trackedBytes)}`
       : undefined,
     details?.untrackedBytes
-      ? `Untracked files attached · ${details.untrackedBytes} B`
+      ? `Untracked files attached · ${formatByteSize(details.untrackedBytes)}`
       : undefined,
     details?.imageCount
-      ? `Images attached · ${details.imageCount}${details.imageBytes ? ` · ${details.imageBytes} B` : ""}${details.imageOmissions ? ` · ${details.imageOmissions} withheld` : ""}`
+      ? `${details.imageCount} image${details.imageCount === 1 ? "" : "s"} attached${details.imageBytes ? ` · ${formatByteSize(details.imageBytes)}` : ""}${details.imageOmissions ? ` · ${details.imageOmissions} withheld` : ""}`
       : undefined,
   ].filter((label): label is string => label !== undefined);
 
