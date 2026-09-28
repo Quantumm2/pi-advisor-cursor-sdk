@@ -4,6 +4,7 @@ import {
   setAdvisorCollapseResponsesRef,
   setAdvisorCompletionGateRef,
   setAdvisorCustomInvocationRef,
+  setAdvisorDisableSameModelRef,
   setAdvisorEffortRef,
   setAdvisorFailureGateRef,
   setAdvisorFailureModeRef,
@@ -75,6 +76,7 @@ export const resetDefaults = () => {
   setAdvisorFailureGateRef(true);
   setAdvisorCompletionGateRef(true);
   setAdvisorCustomInvocationRef(undefined);
+  setAdvisorDisableSameModelRef(true);
   setAdvisorCollapseResponsesRef(false);
   setAdvisorBlockOnBlockedRef(true);
   setAdvisorAutoLoopGateRef(true);
@@ -149,6 +151,11 @@ export const applyConfig = (config: AdvisorConfig) => {
     config,
     "advisorCustomInvocation",
     setAdvisorCustomInvocationRef
+  );
+  applyOptionalConfig(
+    config,
+    "advisorDisableSameModel",
+    setAdvisorDisableSameModelRef
   );
   applyOptionalConfig(
     config,

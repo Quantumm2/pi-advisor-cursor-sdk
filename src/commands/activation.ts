@@ -19,6 +19,7 @@ import {
   setExecutorRef,
 } from "../config/state.ts";
 import { saveConfig } from "../config/storage.ts";
+import { sameModelAdvisorDisabled } from "../tools/model-access.ts";
 import {
   loadCommandConfig,
   prepareActivationModels,
@@ -132,12 +133,16 @@ export const activateAdvisor = async (
       "record_advisor_outcome",
     ]);
   }
+  const activeModel = isMarkedSubagent()
+    ? ctx.model
+    : findConfiguredModel(ctx, executorRef);
+  runtime.updateSameModelNotice(ctx, activeModel);
   if (announce) {
     const activeExecutorRef = effectiveExecutorRef(ctx);
     const activeExecutorEffort = effectiveExecutorEffort(ctx);
     notify(
       ctx,
-      `${ADVISOR_ACTIVATION_EXPLANATION}\n\nAdvisor flow ready — Executor: ${activeExecutorRef} (thinking: ${activeExecutorEffort || "default"}) · Advisor: ${advisorRef} (thinking: ${advisorEffortRef || "default"})`,
+      `${ADVISOR_ACTIVATION_EXPLANATION}\n\nAdvisor flow ${sameModelAdvisorDisabled(ctx, activeModel) ? "configured" : "ready"} — Executor: ${activeExecutorRef} (thinking: ${activeExecutorEffort || "default"}) · Advisor: ${advisorRef} (thinking: ${advisorEffortRef || "default"})`,
       "info"
     );
   }

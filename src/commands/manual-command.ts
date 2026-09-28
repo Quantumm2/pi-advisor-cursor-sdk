@@ -4,7 +4,11 @@ import {
   isSimpleMode,
 } from "../config/state.ts";
 import type { GitContextLevel } from "../git.ts";
-import { advisorModelAccessReason } from "../tools/model-access.ts";
+import {
+  advisorModelAccessReason,
+  sameModelAdvisorDisabled,
+  sameModelAdvisorNotice,
+} from "../tools/model-access.ts";
 import { resolveAdvisorRequest } from "../tools/render-common.ts";
 import { ManualAdvisorDialog } from "../ui/manual-dialog.ts";
 import type { ManualAdvisorRequest } from "../ui/types.ts";
@@ -19,6 +23,10 @@ export const registerManualCommand = (runtime: CommandRuntime) => {
       "Consult the Advisor in parallel; accepts an optional focused question and fans its response out to the Executor",
     handler: async (args, ctx) => {
       if (!loadCommandConfig(ctx)) {
+        return;
+      }
+      if (sameModelAdvisorDisabled(ctx)) {
+        notify(ctx, sameModelAdvisorNotice, "info");
         return;
       }
       const accessReason = advisorModelAccessReason(ctx);
@@ -82,6 +90,10 @@ export const registerManualCommand = (runtime: CommandRuntime) => {
         question = resolveAdvisorRequest(args);
       }
 
+      if (sameModelAdvisorDisabled(ctx)) {
+        notify(ctx, sameModelAdvisorNotice, "info");
+        return;
+      }
       if (!isSimpleMode()) {
         runtime.advisorSessionState.consumeCall();
       }

@@ -34,6 +34,7 @@ export let advisorPlanGateRef = true;
 export let advisorFailureGateRef = true;
 export let advisorCompletionGateRef = true;
 export let advisorCustomInvocationRef: string | undefined;
+export let advisorDisableSameModelRef = true;
 export let advisorCollapseResponsesRef = false;
 export let advisorBlockOnBlockedRef = true;
 export let advisorAutoLoopGateRef = true;
@@ -114,6 +115,9 @@ export const setAdvisorCompletionGateRef = (enabled: boolean) => {
 };
 export const setAdvisorCustomInvocationRef = (rule: string | undefined) => {
   advisorCustomInvocationRef = rule?.trim() || undefined;
+};
+export const setAdvisorDisableSameModelRef = (enabled: boolean) => {
+  advisorDisableSameModelRef = enabled;
 };
 export const setAdvisorCollapseResponsesRef = (enabled: boolean) => {
   advisorCollapseResponsesRef = enabled;
@@ -237,6 +241,7 @@ export const getAdvisorSettings = () => ({
   completionGate: advisorCompletionGateRef,
   contextMaxChars: contextMaxCharsRef,
   customRule: advisorCustomInvocationRef,
+  disableSameModel: advisorDisableSameModelRef,
   effort: advisorEffortRef,
   failureGate: advisorFailureGateRef,
   failureMode: advisorFailureModeRef,

@@ -71,5 +71,10 @@ export interface CommandRuntime {
     model: Parameters<ExtensionAPI["setModel"]>[0]
   ) => ReturnType<ExtensionAPI["setModel"]>;
   suppressModelSelectionSync: boolean;
+  resetSameModelNotice: () => void;
+  updateSameModelNotice: (
+    ctx: ExtensionContext,
+    model?: { id: string; provider: string }
+  ) => void;
   updateAdvisorUsageStatus: (ctx: ExtensionContext) => void;
 }

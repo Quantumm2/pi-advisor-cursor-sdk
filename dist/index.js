@@ -52,6 +52,7 @@ var advisorPlanGateRef = true;
 var advisorFailureGateRef = true;
 var advisorCompletionGateRef = true;
 var advisorCustomInvocationRef;
+var advisorDisableSameModelRef = true;
 var advisorCollapseResponsesRef = false;
 var advisorBlockOnBlockedRef = true;
 var advisorAutoLoopGateRef = true;
@@ -121,6 +122,9 @@ var setAdvisorCompletionGateRef = (enabled) => {
 };
 var setAdvisorCustomInvocationRef = (rule) => {
   advisorCustomInvocationRef = rule?.trim() || undefined;
+};
+var setAdvisorDisableSameModelRef = (enabled) => {
+  advisorDisableSameModelRef = enabled;
 };
 var setAdvisorCollapseResponsesRef = (enabled) => {
   advisorCollapseResponsesRef = enabled;
@@ -238,6 +242,7 @@ var getAdvisorSettings = () => ({
   completionGate: advisorCompletionGateRef,
   contextMaxChars: contextMaxCharsRef,
   customRule: advisorCustomInvocationRef,
+  disableSameModel: advisorDisableSameModelRef,
   effort: advisorEffortRef,
   failureGate: advisorFailureGateRef,
   failureMode: advisorFailureModeRef,
@@ -486,6 +491,12 @@ var CONFIG_SCHEMA = {
     current: () => advisorCustomInvocationRef,
     persisted: true,
     type: "string"
+  },
+  advisorDisableSameModel: {
+    accepted: "true or false",
+    current: () => advisorDisableSameModelRef,
+    persisted: true,
+    type: "boolean"
   },
   advisorEffort: {
     accepted: "a string",
@@ -852,6 +863,7 @@ var resetDefaults = () => {
   setAdvisorFailureGateRef(true);
   setAdvisorCompletionGateRef(true);
   setAdvisorCustomInvocationRef(undefined);
+  setAdvisorDisableSameModelRef(true);
   setAdvisorCollapseResponsesRef(false);
   setAdvisorBlockOnBlockedRef(true);
   setAdvisorAutoLoopGateRef(true);
@@ -909,6 +921,7 @@ var applyConfig = (config) => {
   applyOptionalConfig(config, "advisorFailureGate", setAdvisorFailureGateRef);
   applyOptionalConfig(config, "advisorCompletionGate", setAdvisorCompletionGateRef);
   applyOptionalConfig(config, "advisorCustomInvocation", setAdvisorCustomInvocationRef);
+  applyOptionalConfig(config, "advisorDisableSameModel", setAdvisorDisableSameModelRef);
   applyOptionalConfig(config, "advisorCollapseResponses", setAdvisorCollapseResponsesRef);
   applyOptionalConfig(config, "advisorBlockOnBlocked", setAdvisorBlockOnBlockedRef);
   applyOptionalConfig(config, "advisorAutoLoopGate", setAdvisorAutoLoopGateRef);
@@ -1068,6 +1081,43 @@ var saveGlobalOutcomeLogging = (enabled) => {
 `);
   resetConfigCache();
   return path;
+};
+
+// src/tools/model-access.ts
+var currentModelRef = (ctx) => {
+  const { model } = ctx;
+  return model ? `${model.provider}/${model.id}` : undefined;
+};
+var advisorModelAccess = (ctx) => {
+  const modelRef = currentModelRef(ctx);
+  if (advisorModelWhitelistRef.length === 0) {
+    return modelRef ? { allowed: true, modelRef } : { allowed: true };
+  }
+  if (modelRef && advisorModelWhitelistRef.includes(modelRef)) {
+    return { allowed: true, modelRef };
+  }
+  const current = modelRef ?? "no current model";
+  const denial = {
+    allowed: false,
+    reason: `Advisor calls are restricted to the configured model whitelist (${advisorModelWhitelistRef.join(", ")}). Current model: ${current}.`
+  };
+  if (modelRef) {
+    denial.modelRef = modelRef;
+  }
+  return denial;
+};
+var sameModelAdvisorDisabled = (ctx, model = ctx.model) => {
+  if (!(advisorDisableSameModelRef && advisorRef && model)) {
+    return false;
+  }
+  const [provider, id] = splitRef(advisorRef);
+  return provider === model.provider && id === model.id;
+};
+var sameModelAdvisorNotice = "Advisor disabled: executor and advisor are the same model.";
+var advisorModelIsAllowed = (ctx) => advisorModelAccess(ctx).allowed && !sameModelAdvisorDisabled(ctx);
+var advisorModelAccessReason = (ctx) => {
+  const access = advisorModelAccess(ctx);
+  return access.allowed ? undefined : access.reason;
 };
 
 // src/commands/model-options.ts
@@ -1867,98 +1917,6 @@ import { execFileSync as execFileSync2 } from "node:child_process";
 import { constants } from "node:fs";
 import { lstat, open, realpath } from "node:fs/promises";
 import { isAbsolute, relative, resolve } from "node:path";
-
-// src/images.ts
-import { createHash } from "node:crypto";
-var ADVISOR_IMAGE_MAX_BYTES = 4 * 1024 * 1024;
-var ADVISOR_IMAGES_TOTAL_MAX_BYTES = 8 * 1024 * 1024;
-var ADVISOR_IMAGES_MAX_COUNT = 4;
-var isPng = (bytes) => bytes.length >= 45 && bytes.subarray(0, 8).equals(Buffer.from("89504e470d0a1a0a", "hex")) && bytes.readUInt32BE(8) === 13 && bytes.toString("ascii", 12, 16) === "IHDR" && bytes.readUInt32BE(16) > 0 && bytes.readUInt32BE(20) > 0 && bytes.readUInt32BE(bytes.length - 12) === 0 && bytes.toString("ascii", bytes.length - 8, bytes.length - 4) === "IEND";
-var isJpeg = (bytes) => bytes.length >= 4 && bytes[0] === 255 && bytes[1] === 216 && bytes[2] === 255 && bytes.at(-2) === 255 && bytes.at(-1) === 217;
-var isGif = (bytes) => bytes.length >= 14 && ["GIF87a", "GIF89a"].includes(bytes.toString("ascii", 0, 6)) && bytes.readUInt16LE(6) > 0 && bytes.readUInt16LE(8) > 0 && bytes.at(-1) === 59;
-var isWebp = (bytes) => bytes.length >= 16 && bytes.toString("ascii", 0, 4) === "RIFF" && bytes.toString("ascii", 8, 12) === "WEBP" && bytes.readUInt32LE(4) === bytes.length - 8 && ["VP8 ", "VP8L", "VP8X"].includes(bytes.toString("ascii", 12, 16));
-var imageFormat = (bytes) => {
-  if (isPng(bytes)) {
-    return "image/png";
-  }
-  if (isJpeg(bytes)) {
-    return "image/jpeg";
-  }
-  if (isGif(bytes)) {
-    return "image/gif";
-  }
-  if (isWebp(bytes)) {
-    return "image/webp";
-  }
-};
-var imageFromBytes = (bytes, mimeType) => {
-  if (!bytes.length || bytes.length > ADVISOR_IMAGE_MAX_BYTES) {
-    return;
-  }
-  const actual = imageFormat(bytes);
-  if (!actual || mimeType && mimeType !== actual) {
-    return;
-  }
-  return { data: bytes.toString("base64"), mimeType: actual, type: "image" };
-};
-var imageFromPart = (part) => {
-  if (part.type !== "image" || !isString(part.data) || !isString(part.mimeType) || part.data.length > Math.ceil(ADVISOR_IMAGE_MAX_BYTES * 4 / 3) + 4 || !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/u.test(part.data)) {
-    return;
-  }
-  const bytes = Buffer.from(part.data, "base64");
-  if (bytes.toString("base64") !== part.data) {
-    return;
-  }
-  return imageFromBytes(bytes, part.mimeType);
-};
-var imageMarker = (part, nonce = "") => {
-  if (part.type !== "image") {
-    return;
-  }
-  const image = imageFromPart(part);
-  if (!image) {
-    return "[Image omitted: unsupported format, invalid data, or over 4 MiB; pixels not reviewed]";
-  }
-  const id = createHash("sha256").update(nonce).update(image.data).digest("hex").slice(0, 24);
-  return `[Image ref=img_${id}; pixels reviewed only if attached below]`;
-};
-var selectedConversationImages = (ctx, conversation, policies, scoutSelected, nonce) => {
-  if (!conversation) {
-    return [];
-  }
-  const entries = scoutSelected ? ctx.sessionManager.buildContextEntries() : ctx.sessionManager.getBranch();
-  const images = [];
-  const seen = new Set;
-  for (const entry of entries) {
-    if (entry.type !== "message") {
-      continue;
-    }
-    const { message } = entry;
-    if (message.role !== "user" && message.role !== "toolResult") {
-      continue;
-    }
-    if (message.role === "toolResult" && (policies[message.toolName] ?? "full") !== "full") {
-      continue;
-    }
-    for (const part of contentParts(message.content)) {
-      if (!isRecordOf(part)) {
-        continue;
-      }
-      const marker = imageMarker(part, nonce);
-      if (!marker || seen.has(marker) || !conversation.includes(marker)) {
-        continue;
-      }
-      const image = imageFromPart(part);
-      if (image) {
-        seen.add(marker);
-        images.push({ image, marker });
-      }
-    }
-  }
-  return images;
-};
-
-// src/attachments.ts
 var ADVISOR_FILE_MAX_BYTES = 8 * 1024;
 var ADVISOR_FILES_TOTAL_MAX_BYTES = 24 * 1024;
 var imageExtensions = new Map([
@@ -2094,21 +2052,332 @@ var readFiles = async (cwd, requested, enabled, redact, kind, totalLimit = ADVIS
 };
 var readTrackedFiles = (cwd, requested, enabled, redact, totalLimit = ADVISOR_FILES_TOTAL_MAX_BYTES) => readFiles(cwd, requested, enabled, redact, "tracked", totalLimit);
 var readUntrackedFiles = (cwd, requested, enabled, redact, totalLimit = ADVISOR_FILES_TOTAL_MAX_BYTES) => readFiles(cwd, requested, enabled, redact, "untracked", totalLimit);
+
+// src/image-attachments.ts
+import { constants as constants2 } from "node:fs";
+import { lstat as lstat2, open as open2, realpath as realpath2 } from "node:fs/promises";
+import { resolve as resolve2 } from "node:path";
+
+// src/images.ts
+import { createHash } from "node:crypto";
+
+// src/image-validation.ts
+import { inflateSync } from "node:zlib";
+var PNG_SIGNATURE = Buffer.from("89504e470d0a1a0a", "hex");
+var isPng = (bytes) => {
+  if (bytes.length < 57 || !bytes.subarray(0, 8).equals(PNG_SIGNATURE)) {
+    return false;
+  }
+  let offset = 8;
+  let hasHeader = false;
+  const compressed = [];
+  while (offset + 12 <= bytes.length) {
+    const length = bytes.readUInt32BE(offset);
+    if (length > bytes.length - offset - 12) {
+      return false;
+    }
+    const type = bytes.toString("ascii", offset + 4, offset + 8);
+    const data = offset + 8;
+    offset += length + 12;
+    if (!hasHeader) {
+      if (type !== "IHDR" || length !== 13 || bytes.readUInt32BE(data) === 0 || bytes.readUInt32BE(data + 4) === 0) {
+        return false;
+      }
+      hasHeader = true;
+    } else if (type === "IDAT") {
+      compressed.push(bytes.subarray(data, data + length));
+    } else if (type === "IEND") {
+      if (length !== 0 || offset !== bytes.length || !compressed.length) {
+        return false;
+      }
+      try {
+        return inflateSync(Buffer.concat(compressed), {
+          maxOutputLength: 32 * 1024 * 1024
+        }).length > 0;
+      } catch {
+        return false;
+      }
+    } else if (type === "IHDR") {
+      return false;
+    }
+  }
+  return false;
+};
+var isFrameMarker = (marker) => [
+  192,
+  193,
+  194,
+  195,
+  197,
+  198,
+  199,
+  201,
+  202,
+  203,
+  205,
+  206,
+  207
+].includes(marker);
+var nextScanMarker = (bytes, from) => {
+  let offset = from;
+  while (offset < bytes.length - 1) {
+    if (bytes[offset] !== 255) {
+      offset += 1;
+      continue;
+    }
+    let next = offset + 1;
+    while (bytes[next] === 255) {
+      next += 1;
+    }
+    if (bytes[next] !== 0 && (bytes[next] < 208 || bytes[next] > 215)) {
+      return offset;
+    }
+    offset = next + 1;
+  }
+  return bytes.length;
+};
+var readJpegSegment = (bytes, at) => {
+  if (bytes[at] !== 255) {
+    return;
+  }
+  let offset = at;
+  while (bytes[offset] === 255) {
+    offset += 1;
+  }
+  const marker = bytes[offset];
+  offset += 1;
+  if (marker === 217) {
+    return { end: offset, frame: false, marker, size: 0 };
+  }
+  if (offset + 2 > bytes.length || marker === 0) {
+    return;
+  }
+  const size = bytes.readUInt16BE(offset);
+  if (size < 2 || offset + size > bytes.length) {
+    return;
+  }
+  const frame = isFrameMarker(marker) && size >= 11 && bytes.readUInt16BE(offset + 3) > 0 && bytes.readUInt16BE(offset + 5) > 0;
+  return { end: offset + size, frame, marker, size };
+};
+var hasJpegEnvelope = (bytes) => bytes.length >= 24 && bytes[0] === 255 && bytes[1] === 216 && bytes.at(-2) === 255 && bytes.at(-1) === 217;
+var isJpeg = (bytes) => {
+  if (!hasJpegEnvelope(bytes)) {
+    return false;
+  }
+  let offset = 2;
+  let frame = false;
+  let scan = false;
+  let quantization = false;
+  let entropyTable = false;
+  while (offset < bytes.length) {
+    const segment = readJpegSegment(bytes, offset);
+    if (!segment) {
+      return false;
+    }
+    const { end, marker, size } = segment;
+    if (marker === 217) {
+      return frame && scan && end === bytes.length;
+    }
+    frame ||= segment.frame;
+    quantization ||= marker === 219;
+    entropyTable ||= marker === 196 || marker === 204;
+    offset = end;
+    if (marker === 218) {
+      if (!(frame && quantization && entropyTable && size >= 6)) {
+        return false;
+      }
+      const next = nextScanMarker(bytes, offset);
+      if (next <= offset) {
+        return false;
+      }
+      scan = true;
+      offset = next;
+    }
+  }
+  return false;
+};
+var skipGifBlocks = (bytes, at) => {
+  let offset = at;
+  while (offset < bytes.length) {
+    const length = bytes[offset];
+    offset += 1;
+    if (length === 0) {
+      return offset;
+    }
+    if (offset + length > bytes.length) {
+      return;
+    }
+    offset += length;
+  }
+};
+var gifColorTableEnd = (bytes, at, packed) => at + ((packed & 128) === 0 ? 0 : 3 * 2 ** ((packed & 7) + 1));
+var gifFrameEnd = (bytes, at) => {
+  if (at + 9 > bytes.length || bytes.readUInt16LE(at + 4) === 0 || bytes.readUInt16LE(at + 6) === 0) {
+    return;
+  }
+  const data = gifColorTableEnd(bytes, at + 9, bytes[at + 8]);
+  if (data + 2 >= bytes.length || bytes[data] < 2 || bytes[data] > 12 || bytes[data + 1] === 0) {
+    return;
+  }
+  return skipGifBlocks(bytes, data + 1);
+};
+var isGif = (bytes) => {
+  if (bytes.length < 20 || !["GIF87a", "GIF89a"].includes(bytes.toString("ascii", 0, 6)) || bytes.readUInt16LE(6) === 0 || bytes.readUInt16LE(8) === 0) {
+    return false;
+  }
+  let offset = gifColorTableEnd(bytes, 13, bytes[10]);
+  let frame = false;
+  while (offset < bytes.length) {
+    const block = bytes[offset];
+    offset += 1;
+    if (block === 59) {
+      return frame && offset === bytes.length;
+    }
+    if (block === 33 && offset < bytes.length) {
+      offset = skipGifBlocks(bytes, offset + 1) ?? bytes.length;
+    } else if (block === 44) {
+      const end = gifFrameEnd(bytes, offset);
+      if (end === undefined) {
+        return false;
+      }
+      frame = true;
+      offset = end;
+    } else {
+      return false;
+    }
+  }
+  return false;
+};
+var validWebpFrame = (bytes, type, data, length) => {
+  if (type === "VP8 ") {
+    return length >= 10 && bytes.toString("hex", data + 3, data + 6) === "9d012a" && (bytes.readUInt16LE(data + 6) & 16383) > 0 && (bytes.readUInt16LE(data + 8) & 16383) > 0;
+  }
+  if (type === "VP8L") {
+    return length >= 5 && bytes[data] === 47;
+  }
+  return type === "ANMF" && length >= 16;
+};
+var isWebp = (bytes) => {
+  if (bytes.length < 30 || bytes.toString("ascii", 0, 4) !== "RIFF" || bytes.toString("ascii", 8, 12) !== "WEBP" || bytes.readUInt32LE(4) !== bytes.length - 8) {
+    return false;
+  }
+  let offset = 12;
+  let frame = false;
+  while (offset + 8 <= bytes.length) {
+    const type = bytes.toString("ascii", offset, offset + 4);
+    const length = bytes.readUInt32LE(offset + 4);
+    const data = offset + 8;
+    const end = data + length + length % 2;
+    if (end > bytes.length) {
+      return false;
+    }
+    frame ||= validWebpFrame(bytes, type, data, length);
+    offset = end;
+  }
+  return frame && offset === bytes.length;
+};
+var detectImageFormat = (bytes) => {
+  if (isPng(bytes)) {
+    return "image/png";
+  }
+  if (isJpeg(bytes)) {
+    return "image/jpeg";
+  }
+  if (isGif(bytes)) {
+    return "image/gif";
+  }
+  if (isWebp(bytes)) {
+    return "image/webp";
+  }
+};
+
+// src/images.ts
+var ADVISOR_IMAGE_MAX_BYTES = 4 * 1024 * 1024;
+var ADVISOR_IMAGES_TOTAL_MAX_BYTES = 8 * 1024 * 1024;
+var ADVISOR_IMAGES_MAX_COUNT = 4;
+var imageFromBytes = (bytes, mimeType) => {
+  if (!bytes.length || bytes.length > ADVISOR_IMAGE_MAX_BYTES) {
+    return;
+  }
+  const actual = detectImageFormat(bytes);
+  if (!actual || mimeType && mimeType !== actual) {
+    return;
+  }
+  return { data: bytes.toString("base64"), mimeType: actual, type: "image" };
+};
+var imageFromPart = (part) => {
+  if (part.type !== "image" || !isString(part.data) || !isString(part.mimeType) || part.data.length > Math.ceil(ADVISOR_IMAGE_MAX_BYTES * 4 / 3) + 4 || !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/u.test(part.data)) {
+    return;
+  }
+  const bytes = Buffer.from(part.data, "base64");
+  if (bytes.toString("base64") !== part.data) {
+    return;
+  }
+  return imageFromBytes(bytes, part.mimeType);
+};
+var imageMarker = (part, nonce = "") => {
+  if (part.type !== "image") {
+    return;
+  }
+  const image = imageFromPart(part);
+  if (!image) {
+    return "[Image omitted: unsupported format, invalid data, or over 4 MiB; pixels not reviewed]";
+  }
+  const id = createHash("sha256").update(nonce).update(image.data).digest("hex").slice(0, 24);
+  return `[Image ref=img_${id}; pixels reviewed only if attached below]`;
+};
+var selectedConversationImages = (ctx, conversation, policies, selectedEntryIds, nonce) => {
+  if (!conversation) {
+    return [];
+  }
+  const entries = selectedEntryIds ? ctx.sessionManager.buildContextEntries() : ctx.sessionManager.getBranch();
+  const images = [];
+  const seen = new Set;
+  for (const [index, entry] of entries.entries()) {
+    if (entry.type !== "message" || selectedEntryIds && !selectedEntryIds.has(entry.id ?? String(index))) {
+      continue;
+    }
+    const { message } = entry;
+    if (message.role !== "user" && message.role !== "toolResult") {
+      continue;
+    }
+    if (message.role === "toolResult" && (policies[message.toolName] ?? "full") !== "full") {
+      continue;
+    }
+    for (const part of contentParts(message.content)) {
+      if (!isRecordOf(part)) {
+        continue;
+      }
+      const marker = imageMarker(part, nonce);
+      if (!marker || seen.has(marker) || !conversation.includes(marker)) {
+        continue;
+      }
+      const image = imageFromPart(part);
+      if (image) {
+        seen.add(marker);
+        images.push({ image, marker });
+      }
+    }
+  }
+  return images;
+};
+
+// src/image-attachments.ts
 var readImageAttachment = async (root, name, mimeType, remaining) => {
-  const absolute = resolve(root, name);
+  const absolute = resolve2(root, name);
   if (!within(root, absolute)) {
     return;
   }
-  const stats = await lstat(absolute);
+  const stats = await lstat2(absolute);
   if (stats.isSymbolicLink() || !stats.isFile()) {
     return;
   }
-  const resolved = await realpath(absolute);
+  const resolved = await realpath2(absolute);
   if (!within(root, resolved)) {
     return;
   }
-  const flags = constants.O_NOFOLLOW ? constants.O_RDONLY + constants.O_NOFOLLOW : constants.O_RDONLY;
-  const file = await open(resolved, flags);
+  const flags = constants2.O_NOFOLLOW ? constants2.O_RDONLY + constants2.O_NOFOLLOW : constants2.O_RDONLY;
+  const file = await open2(resolved, flags);
   try {
     const opened = await file.stat();
     if (!opened.isFile() || opened.size > ADVISOR_IMAGE_MAX_BYTES || opened.size > remaining) {
@@ -2163,7 +2432,7 @@ var readImageFiles = async (cwd, requested, enabled, kind, remainingBytes, remai
 };
 
 // src/preferences.ts
-import { lstat as lstat2, open as open2, realpath as realpath2 } from "node:fs/promises";
+import { lstat as lstat3, open as open3, realpath as realpath3 } from "node:fs/promises";
 import { join as join2, relative as relative2 } from "node:path";
 var PREFERENCES_MAX_BYTES = 8 * 1024;
 var PREFERENCES_FILENAME = ["advisor-preferences", "md"].join(".");
@@ -2176,17 +2445,17 @@ var readProjectPreferences = async (ctx, maxBytes = PREFERENCES_MAX_BYTES, redac
     return;
   }
   try {
-    const root = await realpath2(ctx.cwd);
+    const root = await realpath3(ctx.cwd);
     const candidate = join2(ctx.cwd, ".pi", PREFERENCES_FILENAME);
-    const stats = await lstat2(candidate);
+    const stats = await lstat3(candidate);
     if (stats.isSymbolicLink() || !stats.isFile()) {
       return;
     }
-    const resolved = await realpath2(candidate);
+    const resolved = await realpath3(candidate);
     if (!inside(root, resolved)) {
       return;
     }
-    const file = await open2(resolved, "r");
+    const file = await open3(resolved, "r");
     try {
       const buffer = Buffer.alloc(maxBytes + 1);
       const { bytesRead } = await file.read(buffer, 0, buffer.length, 0);
@@ -2501,6 +2770,7 @@ var groupWireBytes = (group) => byteLength(JSON.stringify(groupWire(group)));
 var createGroup = (originalIndex, entryIds, kind, content, required) => ({
   bytes: byteLength(content),
   content,
+  entryIds,
   id: stableId(originalIndex, entryIds, kind, content),
   kind,
   label: labelFor(kind, content),
@@ -3205,11 +3475,13 @@ var curateAdvisorConversation = async (ctx, legacyConversation, signal, onScout,
   if (!outcome.ok && outcome.cancelled) {
     throw signal?.reason instanceof Error ? signal.reason : new Error("Advisor operation cancelled during Scout.");
   }
-  let conversation = legacyConversation;
   if (outcome.ok) {
-    conversation = maxChars === undefined ? outcome.conversation : reconstructScoutConversation(built.manifest, outcome.selection.selectedIds, outcome.selection.synthesis, maxChars);
+    const selected = new Set(outcome.selection.selectedIds);
+    const selectedEntryIds = built.manifest.groups.filter((group) => group.required || selected.has(group.id)).flatMap((group) => group.entryIds ?? []);
+    const conversation = maxChars === undefined ? outcome.conversation : reconstructScoutConversation(built.manifest, outcome.selection.selectedIds, outcome.selection.synthesis, maxChars);
+    return { conversation, scout: outcome, selectedEntryIds };
   }
-  return { conversation, scout: outcome };
+  return { conversation: legacyConversation, scout: outcome };
 };
 
 // src/tools/prompts.ts
@@ -3343,7 +3615,7 @@ var assembleConsultationContext = async (options) => {
   }));
   let remainingBytes = ADVISOR_IMAGES_TOTAL_MAX_BYTES - [...untrackedImages.images, ...trackedImages.images].reduce((sum, item) => sum + item.bytes, 0);
   let imageOmissions = untrackedImages.omitted + trackedImages.omitted;
-  const selected = selectedConversationImages(ctx, curated.conversation, advisorToolPoliciesRef, curated.scout?.ok === true, imageNonce);
+  const selected = selectedConversationImages(ctx, curated.conversation, advisorToolPoliciesRef, curated.scout?.ok === true ? new Set(curated.selectedEntryIds) : undefined, imageNonce);
   for (const item of selected) {
     const bytes = Buffer.from(item.image.data, "base64").length;
     if (!supportsImages || images.length >= ADVISOR_IMAGES_MAX_COUNT || bytes > remainingBytes) {
@@ -3464,35 +3736,6 @@ var adviceForGateText = (result) => `**Decision: ${result.decision}**
 
 ${result.markdown}`;
 
-// src/tools/model-access.ts
-var currentModelRef = (ctx) => {
-  const { model } = ctx;
-  return model ? `${model.provider}/${model.id}` : undefined;
-};
-var advisorModelAccess = (ctx) => {
-  const modelRef = currentModelRef(ctx);
-  if (advisorModelWhitelistRef.length === 0) {
-    return modelRef ? { allowed: true, modelRef } : { allowed: true };
-  }
-  if (modelRef && advisorModelWhitelistRef.includes(modelRef)) {
-    return { allowed: true, modelRef };
-  }
-  const current = modelRef ?? "no current model";
-  const denial = {
-    allowed: false,
-    reason: `Advisor calls are restricted to the configured model whitelist (${advisorModelWhitelistRef.join(", ")}). Current model: ${current}.`
-  };
-  if (modelRef) {
-    denial.modelRef = modelRef;
-  }
-  return denial;
-};
-var advisorModelIsAllowed = (ctx) => advisorModelAccess(ctx).allowed;
-var advisorModelAccessReason = (ctx) => {
-  const access = advisorModelAccess(ctx);
-  return access.allowed ? undefined : access.reason;
-};
-
 // src/tools/consultation.ts
 class AdvisorNoAdviceError extends Error {
   constructor() {
@@ -3506,6 +3749,9 @@ ${item.text}
 var collectAdvisorResponse = async (options) => {
   const { ctx, question, signal, systemPrompt } = options;
   loadConfig(ctx);
+  if (sameModelAdvisorDisabled(ctx)) {
+    throw new Error(sameModelAdvisorNotice);
+  }
   const accessReason = advisorModelAccessReason(ctx);
   if (accessReason) {
     throw new Error(accessReason);
@@ -4401,6 +4647,7 @@ class CommandRuntime {
   manualProgressSequence = 0;
   pendingExecutorModelRef;
   suppressModelSelectionSync = false;
+  lastSameModelDisabled;
   constructor(pi, dependencies = {}) {
     this.pi = pi;
     this.advisorSessionState = dependencies.sessionState ?? advisorSessionState;
@@ -4410,6 +4657,21 @@ class CommandRuntime {
   }
   flowEnabled() {
     return this.pi.getActiveTools().includes("ask_advisor");
+  }
+  resetSameModelNotice() {
+    this.lastSameModelDisabled = undefined;
+  }
+  updateSameModelNotice(ctx, model = ctx.model) {
+    if (!this.flowEnabled()) {
+      return;
+    }
+    const disabled = sameModelAdvisorDisabled(ctx, model);
+    if (disabled && this.lastSameModelDisabled !== true) {
+      notify(ctx, sameModelAdvisorNotice, "info");
+    } else if (!disabled && this.lastSameModelDisabled === true) {
+      notify(ctx, "Advisor re-enabled: executor and advisor models differ.", "info");
+    }
+    this.lastSameModelDisabled = disabled;
   }
   nextManualProgressId() {
     this.manualProgressSequence += 1;
@@ -4552,12 +4814,14 @@ var activateAdvisor = async (runtime, args, ctx, announce = true) => {
       "record_advisor_outcome"
     ]);
   }
+  const activeModel = isMarkedSubagent() ? ctx.model : findConfiguredModel(ctx, executorRef);
+  runtime.updateSameModelNotice(ctx, activeModel);
   if (announce) {
     const activeExecutorRef = effectiveExecutorRef(ctx);
     const activeExecutorEffort = effectiveExecutorEffort(ctx);
     notify(ctx, `${ADVISOR_ACTIVATION_EXPLANATION}
 
-Advisor flow ready — Executor: ${activeExecutorRef} (thinking: ${activeExecutorEffort || "default"}) · Advisor: ${advisorRef} (thinking: ${advisorEffortRef || "default"})`, "info");
+Advisor flow ${sameModelAdvisorDisabled(ctx, activeModel) ? "configured" : "ready"} — Executor: ${activeExecutorRef} (thinking: ${activeExecutorEffort || "default"}) · Advisor: ${advisorRef} (thinking: ${advisorEffortRef || "default"})`, "info");
   }
 };
 
@@ -4565,10 +4829,13 @@ Advisor flow ready — Executor: ${activeExecutorRef} (thinking: ${activeExecuto
 var registerCommandLifecycle = (runtime, activateAdvisor) => {
   runtime.pi.on("session_start", async (_event, ctx) => {
     runtime.pendingExecutorModelRef = undefined;
+    runtime.resetSameModelNotice();
     try {
       loadConfig(ctx);
       if (alwaysOnRef) {
         await activateAdvisor("", ctx, false);
+      } else {
+        runtime.updateSameModelNotice(ctx);
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -4576,6 +4843,9 @@ var registerCommandLifecycle = (runtime, activateAdvisor) => {
     }
   });
   runtime.pi.on("model_select", (event, ctx) => {
+    if (!runtime.suppressModelSelectionSync) {
+      runtime.updateSameModelNotice(ctx, event.model);
+    }
     if (event.source !== "set" || runtime.suppressModelSelectionSync || isMarkedSubagent()) {
       return;
     }
@@ -5678,6 +5948,10 @@ var registerManualCommand = (runtime) => {
       if (!loadCommandConfig(ctx)) {
         return;
       }
+      if (sameModelAdvisorDisabled(ctx)) {
+        notify(ctx, sameModelAdvisorNotice, "info");
+        return;
+      }
       const accessReason = advisorModelAccessReason(ctx);
       if (accessReason) {
         notify(ctx, accessReason, "warning");
@@ -5720,6 +5994,10 @@ var registerManualCommand = (runtime) => {
         question = resolveAdvisorRequest(message);
       } else {
         question = resolveAdvisorRequest(args);
+      }
+      if (sameModelAdvisorDisabled(ctx)) {
+        notify(ctx, sameModelAdvisorNotice, "info");
+        return;
       }
       if (!isSimpleMode()) {
         runtime.advisorSessionState.consumeCall();
@@ -5775,6 +6053,7 @@ var registerModelCommands = (runtime) => {
         persistExecutor: true
       });
       runtime.pendingExecutorModelRef = undefined;
+      runtime.updateSameModelNotice(ctx);
       ctx.ui.notify(`Saved Executor + Advisor configurations to ${path}`, "info");
     }
   });
@@ -6531,7 +6810,8 @@ var createSettingsItems = ({
       id: "alwaysOn",
       label: "Always on",
       values: TOGGLE_VALUES
-    }
+    },
+    toggle("disableSameModel", "Disable same-model Advisor", "Skip advice when the active Executor and Advisor use the same provider/model; turn off to allow higher-effort same-model reviews.", settings.disableSameModel, true)
   ];
   if (settings.simpleMode) {
     items.push(modelWhitelist);
@@ -6721,6 +7001,7 @@ var BOOLEAN_SETTING_FIELDS = [
   "blockOnBlocked",
   "collapseResponses",
   "completionGate",
+  "disableSameModel",
   "failureGate",
   "herdrIntegration",
   "outcomeLogging",
@@ -6993,6 +7274,7 @@ var applySessionSettings = (settings) => {
   setAdvisorPlanGateRef(settings.planGate);
   setAdvisorFailureGateRef(settings.failureGate);
   setAdvisorCompletionGateRef(settings.completionGate);
+  setAdvisorDisableSameModelRef(settings.disableSameModel ?? true);
   setAdvisorCollapseResponsesRef(settings.collapseResponses);
   setAdvisorCustomInvocationRef(settings.customRule);
   setAdvisorBlockOnBlockedRef(settings.blockOnBlocked ?? true);
@@ -7067,6 +7349,7 @@ var registerSettingsCommands = (runtime) => {
         onChange: (settings) => {
           try {
             saveAdvisorSettings(ctx, settings);
+            runtime.updateSameModelNotice(ctx);
             runtime.updateAdvisorUsageStatus(ctx);
           } catch (error) {
             const message = error instanceof Error ? error.message : String(error);
@@ -7083,6 +7366,7 @@ var registerSettingsCommands = (runtime) => {
     description: "Disable on-demand Advisor calls; keep the current model",
     handler: (_args, ctx) => {
       runtime.pi.setActiveTools(runtime.pi.getActiveTools().filter((name) => name !== "ask_advisor" && name !== "record_advisor_outcome"));
+      runtime.resetSameModelNotice();
       const wasAlwaysOn = alwaysOnRef;
       if (wasAlwaysOn) {
         const persisted = getPersistedModelRefs();
@@ -7116,7 +7400,7 @@ import {
   chmod,
   link,
   mkdir,
-  open as open3,
+  open as open4,
   readFile,
   stat,
   unlink,
@@ -7178,7 +7462,7 @@ var withOutcomeLock = async (run) => {
   const lockPath = `${outcomeLogPath()}.lock`;
   for (let attempt = 0;attempt < 200; attempt += 1) {
     try {
-      const lock = await open3(lockPath, "wx", 384);
+      const lock = await open4(lockPath, "wx", 384);
       const identity = await lock.stat();
       try {
         return await run();
@@ -7361,7 +7645,7 @@ var handleJevTurnEnd = async (registration, ctx) => {
     });
     session.recordJevGateCheck(result.usage);
     const shouldConsult = composeTurnGateVerdict(result.answers, advisorJevTurnGateNoulThresholdRef);
-    if (!consumeTurnGateBudget(session, shouldConsult)) {
+    if (!advisorModelIsAllowed(ctx) || !consumeTurnGateBudget(session, shouldConsult)) {
       return;
     }
     const herdrActivity = registration.herdrActivity ?? herdrAdvisorActivity;
@@ -7434,11 +7718,11 @@ var attachmentLabels = (details) => [
   details?.trackedBytes ? `Tracked files attached · ${details.trackedBytes} B` : undefined,
   details?.untrackedBytes ? `Untracked files attached · ${details.untrackedBytes} B` : undefined
 ].filter((label) => label !== undefined);
-var renderJevSkipBox = (box, result, expanded, theme) => {
+var renderSkipBox = (box, result, expanded, theme) => {
   const details = advisorResultDetails(result);
   const lines = [
     theme.fg("dim", theme.bold("◆ ADVISOR · SKIPPED")),
-    theme.fg("dim", `  ${details?.jev?.reason ?? ""}`)
+    theme.fg("dim", `  ${details?.skipReason ?? details?.jev?.reason ?? ""}`)
   ];
   box.addChild(new Text5(lines.join(`
 `), 0, 0));
@@ -7500,8 +7784,8 @@ var renderFinalAdvisorResult = (box, result, expanded, theme, context) => {
     context.state.timerId = undefined;
   }
   const details = advisorResultDetails(result);
-  if (details?.jev?.skipped) {
-    renderJevSkipBox(box, result, expanded, theme);
+  if (details?.jev?.skipped || details?.skipReason) {
+    renderSkipBox(box, result, expanded, theme);
     return;
   }
   if (details?.scout) {
@@ -7567,7 +7851,22 @@ var registerAskAdvisorTool = ({
   pi.registerTool({
     description: "Consult the on-demand Advisor model for strategic guidance. Call with an empty object for a contextual review; attach an optional draft for concrete plan or completion review. If the Advisor explicitly names a missing file, you may make a sequential follow-up call with includeTrackedFiles when enabled and relevant.",
     async execute(_id, params, signal, onUpdate, ctx) {
+      const skipSameModel = () => {
+        session.releaseCall(_id);
+        reservedCalls.delete(_id);
+        return {
+          content: [{ text: sameModelAdvisorNotice, type: "text" }],
+          details: {
+            skipReason: sameModelAdvisorNotice,
+            text: sameModelAdvisorNotice
+          }
+        };
+      };
       try {
+        loadConfig(ctx);
+        if (sameModelAdvisorDisabled(ctx)) {
+          return skipSameModel();
+        }
         assertAdvisorModelAccess(ctx);
       } catch (error) {
         session.releaseCall(_id);
@@ -7611,6 +7910,9 @@ var registerAskAdvisorTool = ({
               text: skipText
             }
           };
+        }
+        if (sameModelAdvisorDisabled(ctx)) {
+          return skipSameModel();
         }
         if (!simpleMode && !session.canConsult(getAdvisorMaxCallsPerSession(), _id)) {
           throw new Error("Advisor call budget exhausted for this session.");
@@ -7927,7 +8229,7 @@ var registerToolLifecycle = ({
       return;
     }
     loadConfig(ctx);
-    if (!advisorModelAccess(ctx).allowed) {
+    if (!advisorModelAccess(ctx).allowed || sameModelAdvisorDisabled(ctx)) {
       return;
     }
     const guidelines = advisorInvocationGuidelines();
@@ -7955,6 +8257,9 @@ ${guidelines.map((rule) => `- ${rule}`).join(`
       return;
     }
     if (!loadConfigOrSkipGating(ctx)) {
+      return;
+    }
+    if (sameModelAdvisorDisabled(ctx)) {
       return;
     }
     const accessBlock = modelAccessBlock(event.toolName, ctx);

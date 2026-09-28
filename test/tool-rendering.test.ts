@@ -101,6 +101,40 @@ describe("Advisor tool rendering", () => {
     expect(response).not.toContain("Advisor (test/model)");
   });
 
+  test("renders same-model no-op in the existing call and skipped-result shell", () => {
+    const advisorTool = registerForRendering();
+    const theme = renderTheme();
+    const context = {
+      invalidate: () => {},
+      lastComponent: undefined,
+      state: emptyRenderState(),
+    };
+    const call = advisorTool
+      .renderCall({}, theme, context)
+      .render(100)
+      .join("\n");
+    const skipped = advisorTool
+      .renderResult(
+        {
+          content: [{ text: "Advisor disabled: same model.", type: "text" }],
+          details: {
+            skipReason: "Advisor disabled: same model.",
+            text: "Advisor disabled: same model.",
+          },
+        },
+        { expanded: false, isPartial: false },
+        theme,
+        context
+      )
+      .render(100)
+      .join("\n");
+    expect(call).toContain("[advisor] Executor → Advisor");
+    expect(skipped).toContain("ADVISOR · SKIPPED");
+    expect(skipped).toContain("Advisor disabled: same model.");
+    expect(skipped).not.toContain("ADVISOR RESPONSE");
+    expect(skipped).not.toMatch(SPINNER_PATTERN);
+  });
+
   test("hides usage details from the response when disabled", () => {
     const advisorTool = registerForRendering();
     const theme = renderTheme();

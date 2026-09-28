@@ -23,12 +23,15 @@ export const registerCommandLifecycle = (
 ) => {
   runtime.pi.on("session_start", async (_event, ctx) => {
     runtime.pendingExecutorModelRef = undefined;
+    runtime.resetSameModelNotice();
     // A malformed advisor.json or a provider auth failure must not reject a
     // lifecycle handler and break session startup.
     try {
       loadConfig(ctx);
       if (alwaysOnRef) {
         await activateAdvisor("", ctx, false);
+      } else {
+        runtime.updateSameModelNotice(ctx);
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -37,6 +40,9 @@ export const registerCommandLifecycle = (
   });
 
   runtime.pi.on("model_select", (event, ctx) => {
+    if (!runtime.suppressModelSelectionSync) {
+      runtime.updateSameModelNotice(ctx, event.model);
+    }
     // "restore" replays a stored session model and "cycle" changes the active
     // model without an explicit `/model` choice. Neither should redefine the
     // configured Executor.

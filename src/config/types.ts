@@ -65,6 +65,7 @@ export interface AdvisorConfig {
   advisorCollapseResponses?: boolean;
   advisorCompletionGate?: boolean;
   advisorCustomInvocation?: string;
+  advisorDisableSameModel?: boolean;
   advisorEffort?: string;
   advisorFailureGate?: boolean;
   advisorGitContext?: GitContextLevel;

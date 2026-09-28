@@ -74,6 +74,7 @@ export interface AdvisorSettings {
   completionGate: boolean;
   contextMaxChars: number;
   customRule?: string;
+  disableSameModel?: boolean;
   effort?: string;
   failureGate: boolean;
   failureMode?: GateFailureMode;

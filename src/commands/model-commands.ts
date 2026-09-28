@@ -57,6 +57,7 @@ export const registerModelCommands = (runtime: CommandRuntime) => {
         persistExecutor: true,
       });
       runtime.pendingExecutorModelRef = undefined;
+      runtime.updateSameModelNotice(ctx);
       ctx.ui.notify(
         `Saved Executor + Advisor configurations to ${path}`,
         "info"

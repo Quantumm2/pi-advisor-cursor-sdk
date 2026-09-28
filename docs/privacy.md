@@ -41,7 +41,7 @@ In a trusted project, `.pi/advisor-preferences.md` may provide a short local bri
 
 `advisorScoutEnabled` defaults to `false`. When enabled, Scout sends a bounded manifest of Advisor-eligible conversation and tool history to the configured Executor model and provider before every Advisor invocation.
 
-The same tool disclosure policies, tool-result limits, and optional secret redaction run before Scout sees historical content. Image content is represented by non-pixel markers for selection; image bytes never reach Scout. Tool-call and result messages are grouped atomically. Incomplete historical fragments are omitted rather than sent as orphan evidence. Required current-request context cannot be partially truncated to force a Scout call.
+The same tool disclosure policies, tool-result limits, and optional secret redaction run before Scout sees historical content. Image content is represented by non-pixel markers for selection; image bytes never reach Scout. Advisor image pixels are bound to selected evidence groups, not to markers repeated in Scout's synthesis. Tool-call and result messages are grouped atomically. Incomplete historical fragments are omitted rather than sent as orphan evidence. Required current-request context cannot be partially truncated to force a Scout call.
 
 Scout does not receive the deterministic Git context, Executor draft, project preferences, or explicitly attached tracked and untracked files. These regions bypass Scout and retain their existing disclosure, redaction, escaping, and cap rules when the final Advisor request is assembled.
 

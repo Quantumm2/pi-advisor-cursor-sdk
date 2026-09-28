@@ -1,6 +1,12 @@
 import { describe, expect, test } from "bun:test";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import {
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -9,15 +15,15 @@ import {
   registerFauxProvider,
 } from "@earendil-works/pi-ai/compat";
 
-import { readImageFiles } from "../src/attachments.ts";
 import type { AdvisorConfig } from "../src/config/types.ts";
+import { readImageFiles } from "../src/image-attachments.ts";
 import { ADVISOR_IMAGE_MAX_BYTES, imageFromPart } from "../src/images.ts";
 import { consultAdvisor } from "../src/tools/consultation.ts";
 import { withAgentDir } from "./helpers/config-fixture.ts";
 import { asExtensionContext } from "./helpers/extension-context.ts";
 
 const png =
-  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9S9Y4AAAAASUVORK5CYII=";
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg==";
 const image = { data: png, mimeType: "image/png", type: "image" as const };
 
 const userEntry = {
@@ -137,6 +143,49 @@ describe("Advisor image disclosure", () => {
     expect(imageFromPart({ ...image, mimeType: "image/jpeg" })).toBeUndefined();
     expect(imageFromPart({ ...image, data: "not-base64" })).toBeUndefined();
     expect(
+      imageFromPart({
+        data: Buffer.from([0xff, 0xd8, 0xff, 0xd9]).toString("base64"),
+        mimeType: "image/jpeg",
+        type: "image",
+      })
+    ).toBeUndefined();
+    expect(
+      imageFromPart({
+        ...image,
+        data: Buffer.from(png, "base64").subarray(0, 33).toString("base64"),
+      })
+    ).toBeUndefined();
+    const jpeg = readFileSync(
+      join(import.meta.dir, "fixtures", "red-pixel.jpg")
+    );
+    expect(
+      imageFromPart({
+        data: jpeg.toString("base64"),
+        mimeType: "image/jpeg",
+        type: "image",
+      })
+    ).toBeDefined();
+    const gif = readFileSync(
+      join(import.meta.dir, "fixtures", "red-pixel.gif")
+    );
+    expect(
+      imageFromPart({
+        data: gif.toString("base64"),
+        mimeType: "image/gif",
+        type: "image",
+      })
+    ).toBeDefined();
+    const webp = readFileSync(
+      join(import.meta.dir, "fixtures", "red-pixel.webp")
+    );
+    expect(
+      imageFromPart({
+        data: webp.toString("base64"),
+        mimeType: "image/webp",
+        type: "image",
+      })
+    ).toBeDefined();
+    expect(
       imageFromPart({ ...image, data: "A".repeat(ADVISOR_IMAGE_MAX_BYTES * 2) })
     ).toBeUndefined();
     const bad = await capturedConsultation(
@@ -201,13 +250,19 @@ describe("Advisor image disclosure", () => {
               }
               const manifest = JSON.parse(scoutUser.content[0].text);
               expect(JSON.stringify(manifest)).not.toContain(png);
-              expect(
-                manifest.groups.some((group: any) =>
-                  group.content.includes("[Image ref=")
-                )
-              ).toBe(true);
+              const imageGroup = manifest.groups.find((group: any) =>
+                group.content.includes("[Image ref=")
+              );
+              expect(imageGroup).toBeDefined();
+              const marker =
+                imageGroup.content.match(/\[Image ref=[^\]]+\]/u)?.[0];
               return fauxAssistantMessage(
-                JSON.stringify({ selectedIds: [], synthesis: "" })
+                JSON.stringify({
+                  selectedIds: [
+                    manifest.groups.find((group: any) => group.required).id,
+                  ],
+                  synthesis: `Scout echo: ${marker}`,
+                })
               );
             },
             (context) => {
@@ -217,7 +272,7 @@ describe("Advisor image disclosure", () => {
               return fauxAssistantMessage("Advice");
             },
           ]);
-          await consultAdvisor(
+          const outcome = await consultAdvisor(
             contextFor(agentDir, faux, [
               userEntry,
               {
@@ -227,12 +282,69 @@ describe("Advisor image disclosure", () => {
               },
             ])
           );
+          expect(outcome.scout).toMatchObject({ ok: true });
         }
       );
       expect(faux.state.callCount).toBe(2);
       expect(pixels(request)).toEqual([]);
       expect(text(request)).toContain("Review the code instead");
-      expect(text(request)).not.toContain("[Image ref=");
+      expect(text(request)).toContain("[Scout synthesis");
+      expect(text(request)).toContain("Scout echo: [Image ref=");
+    } finally {
+      faux.unregister();
+    }
+  });
+
+  test("forwards pixels when Scout selects the image's evidence group", async () => {
+    const faux = registerFauxProvider({
+      api: "pi-advisor-image-selected-test",
+      models: [{ id: "advisor", input: ["text", "image"] }],
+      provider: "pi-advisor-image-selected-test",
+    });
+    let request: any;
+    try {
+      await withAgentDir(
+        {
+          advisor: "pi-advisor-image-selected-test/advisor",
+          advisorGitContext: "off",
+          advisorScoutEnabled: true,
+          executor: "pi-advisor-image-selected-test/advisor",
+        },
+        async (agentDir) => {
+          faux.setResponses([
+            (context) => {
+              const scoutUser = context.messages.find(
+                (message) => message.role === "user"
+              );
+              if (
+                scoutUser?.role !== "user" ||
+                !Array.isArray(scoutUser.content) ||
+                scoutUser.content[0]?.type !== "text"
+              ) {
+                throw new Error("Missing Scout manifest");
+              }
+              const manifest = JSON.parse(scoutUser.content[0].text);
+              return fauxAssistantMessage(
+                JSON.stringify({
+                  selectedIds: [manifest.groups[0].id],
+                  synthesis: "",
+                })
+              );
+            },
+            (context) => {
+              request = context.messages.find(
+                (message) => message.role === "user"
+              );
+              return fauxAssistantMessage("Advice");
+            },
+          ]);
+          const outcome = await consultAdvisor(
+            contextFor(agentDir, faux, [userEntry])
+          );
+          expect(outcome.scout).toMatchObject({ ok: true });
+        }
+      );
+      expect(pixels(request)).toEqual([image]);
     } finally {
       faux.unregister();
     }
@@ -293,6 +405,10 @@ describe("Advisor image disclosure", () => {
     execFileSync("git", ["add", "tracked.png"], { cwd, stdio: "ignore" });
     writeFileSync(join(cwd, "new.png"), Buffer.from(png, "base64"));
     writeFileSync(join(cwd, "bad.png"), "not an image");
+    writeFileSync(join(cwd, "fake.jpg"), Buffer.from([0xff, 0xd8, 0xff, 0xd9]));
+    for (const index of [1, 2, 3, 4, 5]) {
+      writeFileSync(join(cwd, `copy-${index}.png`), Buffer.from(png, "base64"));
+    }
     symlinkSync(join(cwd, "new.png"), join(cwd, "link.png"));
     try {
       const refused = await readImageFiles(
@@ -323,6 +439,36 @@ describe("Advisor image disclosure", () => {
         4
       );
       expect(untracked.images.map((item) => item.path)).toEqual(["new.png"]);
+      const malformed = await readImageFiles(
+        cwd,
+        ["fake.jpg"],
+        true,
+        "untracked",
+        1000,
+        4
+      );
+      expect(malformed).toMatchObject({ images: [], omitted: 1 });
+      const copies = [1, 2, 3, 4, 5].map((index) => `copy-${index}.png`);
+      const countLimited = await readImageFiles(
+        cwd,
+        copies,
+        true,
+        "untracked",
+        1000,
+        4
+      );
+      expect(countLimited.images).toHaveLength(4);
+      expect(countLimited.omitted).toBe(1);
+      const byteLimited = await readImageFiles(
+        cwd,
+        copies,
+        true,
+        "untracked",
+        Buffer.from(png, "base64").length * 2,
+        5
+      );
+      expect(byteLimited.images).toHaveLength(2);
+      expect(byteLimited.omitted).toBe(3);
     } finally {
       rmSync(cwd, { force: true, recursive: true });
     }

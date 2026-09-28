@@ -204,6 +204,19 @@ describe("Advisor settings selector", () => {
     selector.dispose();
   });
 
+  test("toggles same-model suppression in Simple mode", () => {
+    const { saved, selector } = openSelector({ initial: { simpleMode: true } });
+    focusSettingsRow(selector, "Disable same-model Advisor");
+    expect(stripTerminalSequences(selector.render(100).join("\n"))).toContain(
+      "Disable same-model Advisor"
+    );
+    changeSetting(selector, "Disable same-model Advisor");
+    expect(saved.at(-1).disableSameModel).toBe(false);
+    changeSetting(selector, "Disable same-model Advisor");
+    expect(saved.at(-1).disableSameModel).toBe(true);
+    selector.dispose();
+  });
+
   test("preserves explicit privacy settings through the selector", () => {
     let saved: any;
     const { selector } = openSelector({

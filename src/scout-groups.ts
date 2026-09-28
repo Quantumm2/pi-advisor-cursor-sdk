@@ -76,6 +76,7 @@ const createGroup = (
 ): ScoutContextGroup => ({
   bytes: byteLength(content),
   content,
+  entryIds,
   id: stableId(originalIndex, entryIds, kind, content),
   kind,
   label: labelFor(kind, content),

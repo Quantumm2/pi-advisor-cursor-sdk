@@ -9,6 +9,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 ### Added
 
 - Image-capable Advisor models can review bounded PNG, JPEG, GIF, and WebP pixels from selected conversation/tool results or explicitly consented image-file handoffs. Unsupported and withheld images are identified so the Advisor cannot mistake a description for visual evidence.
+- Same-model Advisor calls are skipped by default, with a notice on model changes; the setting can be turned off for intentional higher-effort same-model reviews.
 
 ## 0.8.3 - 2026-09-27
 

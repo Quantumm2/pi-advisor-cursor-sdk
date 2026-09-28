@@ -17,7 +17,11 @@ import { AdvisorSettingsSelector } from "../src/ui.ts";
 import { withAgentDir } from "./helpers/config-fixture.ts";
 import { asExtensionContext } from "./helpers/extension-context.ts";
 import { mockPi } from "./helpers/mock-pi.ts";
-import { changeSetting, plainScreen } from "./helpers/settings-navigation.ts";
+import {
+  changeSetting,
+  focusSettingsRow,
+  plainScreen,
+} from "./helpers/settings-navigation.ts";
 
 initTheme();
 
@@ -137,6 +141,7 @@ describe("Advisor settings navigation and gate parsing regressions", () => {
     expect(plainScreen(selector)).not.toContain("Plan gate");
     changeSetting(selector, "Simple mode");
     expect(plainScreen(selector)).toMatch(SIMPLE_MODE_OFF);
+    focusSettingsRow(selector, "Plan gate");
     expect(plainScreen(selector)).toContain("Plan gate");
   });
 

@@ -19,6 +19,7 @@ export type ScoutGroupKind =
 export interface ScoutContextGroup {
   bytes: number;
   content: string;
+  entryIds?: string[];
   id: string;
   kind: ScoutGroupKind;
   label: string;

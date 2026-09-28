@@ -3,11 +3,7 @@ import { randomUUID } from "node:crypto";
 import type { ImageContent } from "@earendil-works/pi-ai/compat";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 
-import {
-  readImageFiles,
-  readTrackedFiles,
-  readUntrackedFiles,
-} from "../attachments.ts";
+import { readTrackedFiles, readUntrackedFiles } from "../attachments.ts";
 import type { UntrackedAttachment } from "../attachments.ts";
 import {
   advisorGitContextMaxCharsRef,
@@ -21,6 +17,7 @@ import {
 } from "../config/state.ts";
 import { clampGitContextLevel, collectGitContext } from "../git.ts";
 import type { GitContextLevel } from "../git.ts";
+import { readImageFiles } from "../image-attachments.ts";
 import {
   ADVISOR_IMAGES_MAX_COUNT,
   ADVISOR_IMAGES_TOTAL_MAX_BYTES,
@@ -191,7 +188,9 @@ export const assembleConsultationContext = async (
     ctx,
     curated.conversation,
     advisorToolPoliciesRef,
-    curated.scout?.ok === true,
+    curated.scout?.ok === true
+      ? new Set<string>(curated.selectedEntryIds)
+      : undefined,
     imageNonce
   );
   for (const item of selected) {

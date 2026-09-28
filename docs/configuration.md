@@ -47,6 +47,7 @@ All fields are optional. The model refs below are explicit examples of models av
   "advisorRedactSecrets": false,
   "advisorTrackedFileContent": false,
   "advisorUntrackedContent": false,
+  "advisorDisableSameModel": true,
   "advisorOutcomeLogging": false,
   "advisorToolPolicies": {
     "bash": "summary",
@@ -54,6 +55,10 @@ All fields are optional. The model refs below are explicit examples of models av
   }
 }
 ```
+
+## Same-model consultations
+
+`advisorDisableSameModel` defaults to `true`. When the active Executor model is the same provider/model as the configured Advisor, `ask_advisor` returns a skipped result without calling the provider, screening with Jev, consuming a consultation, or using a tracked-file handoff. Manual calls and automatic gates are skipped too; they never create a tool or session block. The active model (including models selected by `/model`) is compared, not just the saved Executor setting. `/advisor`, `/advisor-models`, and model selection re-check the match and show a notice on transitions. Turn this setting off in `/advisor-settings` if you want a same-model consultation with a different reasoning level.
 
 ## Advisor model whitelist
 

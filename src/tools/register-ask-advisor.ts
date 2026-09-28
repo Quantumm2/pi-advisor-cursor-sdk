@@ -10,6 +10,7 @@ import {
   getAdvisorSettings,
   isSimpleMode,
 } from "../config/state.ts";
+import { loadConfig } from "../config/storage.ts";
 import { notifyHerdrAdvisorFailure } from "../herdr.ts";
 import {
   ADVISOR_STREAM_UPDATE_INTERVAL_MS,
@@ -22,7 +23,11 @@ import {
 } from "../usage.ts";
 import { notifyLocalFailure, updateAdvisorUsageStatus } from "./gate-policy.ts";
 import { normalizeScreeningQuestion, screeningSkipText } from "./jev-filter.ts";
-import { advisorModelAccessReason } from "./model-access.ts";
+import {
+  advisorModelAccessReason,
+  sameModelAdvisorDisabled,
+  sameModelAdvisorNotice,
+} from "./model-access.ts";
 import { renderAdvisorResult } from "./render-advisor-result.ts";
 import {
   renderAdvisorCallBox,
@@ -73,7 +78,22 @@ export const registerAskAdvisorTool = ({
     description:
       "Consult the on-demand Advisor model for strategic guidance. Call with an empty object for a contextual review; attach an optional draft for concrete plan or completion review. If the Advisor explicitly names a missing file, you may make a sequential follow-up call with includeTrackedFiles when enabled and relevant.",
     async execute(_id, params, signal, onUpdate, ctx) {
+      const skipSameModel = () => {
+        session.releaseCall(_id);
+        reservedCalls.delete(_id);
+        return {
+          content: [{ text: sameModelAdvisorNotice, type: "text" as const }],
+          details: {
+            skipReason: sameModelAdvisorNotice,
+            text: sameModelAdvisorNotice,
+          },
+        };
+      };
       try {
+        loadConfig(ctx);
+        if (sameModelAdvisorDisabled(ctx)) {
+          return skipSameModel();
+        }
         assertAdvisorModelAccess(ctx);
       } catch (error) {
         session.releaseCall(_id);
@@ -127,6 +147,9 @@ export const registerAskAdvisorTool = ({
               text: skipText,
             },
           };
+        }
+        if (sameModelAdvisorDisabled(ctx)) {
+          return skipSameModel();
         }
         if (
           !simpleMode &&

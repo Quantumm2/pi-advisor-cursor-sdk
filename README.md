@@ -19,7 +19,7 @@ Keep implementation on a fast model and borrow frontier reasoning only when deci
 - **On-demand second opinions** through the `ask_advisor` tool or `/advisor-manual`.
 - **Configurable review gates** before plans, after repeated failures, and before declaring completion.
 - **Automatic loop detection** for repeated tool calls, with explicit proceed, revise, or blocked decisions.
-- **Separate model and reasoning controls** for the Executor and Advisor.
+- **Separate model and reasoning controls** for the Executor and Advisor, with same-model consultations skipped by default to avoid redundant calls.
 - **Model whitelist** that can restrict Advisor calls to exact `provider/model` Executor references.
 - **Advisor usage accounting** with per-response token and cost details, normalized usage in Pi's `/cost` totals, and an optional cumulative footer.
 - **Privacy controls** for conversation history, repository context, explicit file and image handoff, tool results, secret redaction, and outcome logging.
@@ -71,7 +71,7 @@ Reload Pi after installing.
 /advisor-settings   # Configure behavior, modes, etc.
 ```
 
-On first use, or whenever a saved model is unavailable, `/advisor` opens the same available-model picker as `/advisor-models`; it never silently chooses an unconfigured model. You can also enable the flow and select both models at once:
+On first use, or whenever a saved model is unavailable, `/advisor` opens the same available-model picker as `/advisor-models`; it never silently chooses an unconfigured model. If the active Executor and Advisor use the same provider/model, calls and automatic gates are skipped with a notice; switching either model resumes consultations. Turn off **Disable same-model Advisor** in `/advisor-settings` (or set `"advisorDisableSameModel": false` globally) if you intentionally want a higher-effort review from that same model. You can also enable the flow and select both models at once:
 
 ```text
 /advisor executor=openai-codex/gpt-5.6-luna advisor=openai-codex/gpt-5.6-sol

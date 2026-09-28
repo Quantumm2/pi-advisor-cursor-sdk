@@ -7,6 +7,7 @@ import {
   advisorCollapseResponsesRef,
   advisorCompletionGateRef,
   advisorCustomInvocationRef,
+  advisorDisableSameModelRef,
   advisorEffortRef,
   advisorFailureGateRef,
   advisorFailureModeRef,
@@ -199,6 +200,12 @@ export const CONFIG_SCHEMA = {
     current: () => advisorCustomInvocationRef,
     persisted: true,
     type: "string",
+  },
+  advisorDisableSameModel: {
+    accepted: "true or false",
+    current: () => advisorDisableSameModelRef,
+    persisted: true,
+    type: "boolean",
   },
   advisorEffort: {
     accepted: "a string",

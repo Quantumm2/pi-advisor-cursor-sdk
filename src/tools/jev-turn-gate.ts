@@ -145,7 +145,10 @@ export const handleJevTurnEnd = async (
       result.answers,
       advisorJevTurnGateNoulThresholdRef
     );
-    if (!consumeTurnGateBudget(session, shouldConsult)) {
+    if (
+      !advisorModelIsAllowed(ctx) ||
+      !consumeTurnGateBudget(session, shouldConsult)
+    ) {
       return;
     }
     const herdrActivity = registration.herdrActivity ?? herdrAdvisorActivity;

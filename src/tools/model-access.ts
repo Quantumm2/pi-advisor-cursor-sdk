@@ -1,6 +1,11 @@
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 
-import { advisorModelWhitelistRef } from "../config/state.ts";
+import {
+  advisorDisableSameModelRef,
+  advisorModelWhitelistRef,
+  advisorRef,
+  splitRef,
+} from "../config/state.ts";
 
 type AdvisorModelAccess =
   | { allowed: true; modelRef?: string }
@@ -34,9 +39,23 @@ export const advisorModelAccess = (
   return denial;
 };
 
+export const sameModelAdvisorDisabled = (
+  ctx: Pick<ExtensionContext, "model">,
+  model: { id: string; provider: string } | undefined = ctx.model
+): boolean => {
+  if (!(advisorDisableSameModelRef && advisorRef && model)) {
+    return false;
+  }
+  const [provider, id] = splitRef(advisorRef);
+  return provider === model.provider && id === model.id;
+};
+
+export const sameModelAdvisorNotice =
+  "Advisor disabled: executor and advisor are the same model.";
+
 export const advisorModelIsAllowed = (
   ctx: Pick<ExtensionContext, "model">
-): boolean => advisorModelAccess(ctx).allowed;
+): boolean => advisorModelAccess(ctx).allowed && !sameModelAdvisorDisabled(ctx);
 
 export const advisorModelAccessReason = (
   ctx: Pick<ExtensionContext, "model">

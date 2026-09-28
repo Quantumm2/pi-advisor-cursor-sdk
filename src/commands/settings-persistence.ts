@@ -7,6 +7,7 @@ import {
   setAdvisorCollapseResponsesRef,
   setAdvisorCompletionGateRef,
   setAdvisorCustomInvocationRef,
+  setAdvisorDisableSameModelRef,
   setAdvisorEffortRef,
   setAdvisorFailureGateRef,
   setAdvisorFailureModeRef,
@@ -68,6 +69,7 @@ const applySessionSettings = (settings: AdvisorSettings) => {
   setAdvisorPlanGateRef(settings.planGate);
   setAdvisorFailureGateRef(settings.failureGate);
   setAdvisorCompletionGateRef(settings.completionGate);
+  setAdvisorDisableSameModelRef(settings.disableSameModel ?? true);
   setAdvisorCollapseResponsesRef(settings.collapseResponses);
   setAdvisorCustomInvocationRef(settings.customRule);
   setAdvisorBlockOnBlockedRef(settings.blockOnBlocked ?? true);

@@ -17,7 +17,11 @@ import type { ScoutLifecycleEvent } from "../scout.ts";
 import type { ConsultationTrigger, GateTrigger } from "../session-state.ts";
 import { assembleConsultationContext } from "./consult-context.ts";
 import { parseAutomaticDecision } from "./gate-protocol.ts";
-import { advisorModelAccessReason } from "./model-access.ts";
+import {
+  advisorModelAccessReason,
+  sameModelAdvisorDisabled,
+  sameModelAdvisorNotice,
+} from "./model-access.ts";
 import {
   ADVISOR_DECISION_SYSTEM,
   ADVISOR_SYSTEM,
@@ -58,6 +62,9 @@ const collectAdvisorResponse = async (
 ) => {
   const { ctx, question, signal, systemPrompt } = options;
   loadConfig(ctx);
+  if (sameModelAdvisorDisabled(ctx)) {
+    throw new Error(sameModelAdvisorNotice);
+  }
   const accessReason = advisorModelAccessReason(ctx);
   if (accessReason) {
     throw new Error(accessReason);

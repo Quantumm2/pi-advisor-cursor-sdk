@@ -25,6 +25,7 @@ export const curateAdvisorConversation = async (
 ): Promise<{
   conversation: string;
   scout?: Exclude<ScoutOutcome, { cancelled: true }>;
+  selectedEntryIds?: string[];
 }> => {
   if (!enabled) {
     return { conversation: legacyConversation };
@@ -61,9 +62,12 @@ export const curateAdvisorConversation = async (
       ? signal.reason
       : new Error("Advisor operation cancelled during Scout.");
   }
-  let conversation = legacyConversation;
   if (outcome.ok) {
-    conversation =
+    const selected = new Set(outcome.selection.selectedIds);
+    const selectedEntryIds = built.manifest.groups
+      .filter((group) => group.required || selected.has(group.id))
+      .flatMap((group) => group.entryIds ?? []);
+    const conversation =
       maxChars === undefined
         ? outcome.conversation
         : reconstructScoutConversation(
@@ -72,6 +76,7 @@ export const curateAdvisorConversation = async (
             outcome.selection.synthesis,
             maxChars
           );
+    return { conversation, scout: outcome, selectedEntryIds };
   }
-  return { conversation, scout: outcome };
+  return { conversation: legacyConversation, scout: outcome };
 };

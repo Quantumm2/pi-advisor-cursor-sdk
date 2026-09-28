@@ -6,7 +6,10 @@ import {
 import { loadConfig } from "../config/storage.ts";
 import { reserveAdvisorCall } from "./gate-policy.ts";
 import { handleAutomaticGate } from "./loop-gate.ts";
-import { advisorModelAccess } from "./model-access.ts";
+import {
+  advisorModelAccess,
+  sameModelAdvisorDisabled,
+} from "./model-access.ts";
 import { advisorInvocationGuidelines } from "./prompts.ts";
 import type { ToolRegistrationContext } from "./types.ts";
 
@@ -73,7 +76,7 @@ export const registerToolLifecycle = ({
       return;
     }
     loadConfig(ctx);
-    if (!advisorModelAccess(ctx).allowed) {
+    if (!advisorModelAccess(ctx).allowed || sameModelAdvisorDisabled(ctx)) {
       return;
     }
     const guidelines = advisorInvocationGuidelines();
@@ -105,6 +108,9 @@ export const registerToolLifecycle = ({
     if (!loadConfigOrSkipGating(ctx)) {
       // The ask_advisor execute path surfaces its own configuration errors as
       // tool errors; every other tool must proceed without Advisor gating.
+      return;
+    }
+    if (sameModelAdvisorDisabled(ctx)) {
       return;
     }
     const accessBlock = modelAccessBlock(event.toolName, ctx);

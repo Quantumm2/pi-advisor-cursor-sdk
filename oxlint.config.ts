@@ -23,6 +23,14 @@ export default defineConfig({
       },
     },
     {
+      files: ["src/image-validation.ts"],
+      rules: {
+        // SAFETY: binary image-format field extraction is the intended use of bitwise operators.
+        "eslint/no-bitwise": "off",
+        "unicorn/numeric-separators-style": "off",
+      },
+    },
+    {
       files: ["test/helpers/**"],
       rules: {
         "typescript/no-explicit-any": "off",

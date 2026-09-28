@@ -27,4 +27,6 @@ git -c diff.stat=false diff --no-ext-diff --check --no-stat
 
 `bun test` covers the normal suite. Run `bun run test:bench` for the repository-only benchmark tests.
 
+`src/tools/register-ask-advisor.ts` exceeds the usual ~300-line target because registration and the sequential screening, budget, one-shot handoff, streaming, and error cleanup path share one ordered execution boundary; splitting that boundary risks changing when a call becomes chargeable or consumes consent.
+
 GitHub Actions manages release tags and publishing from `package.json`. Do not create release tags manually.

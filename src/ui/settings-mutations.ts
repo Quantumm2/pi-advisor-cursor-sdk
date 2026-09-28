@@ -6,6 +6,7 @@ const BOOLEAN_SETTING_FIELDS = [
   "blockOnBlocked",
   "collapseResponses",
   "completionGate",
+  "disableSameModel",
   "failureGate",
   "herdrIntegration",
   "outcomeLogging",

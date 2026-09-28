@@ -46,7 +46,7 @@ const attachmentLabels = (details: AdvisorToolDetails | undefined) =>
       : undefined,
   ].filter((label): label is string => label !== undefined);
 
-const renderJevSkipBox = (
+const renderSkipBox = (
   box: Box,
   result: AgentToolResult<AdvisorToolDetails>,
   expanded: boolean,
@@ -55,7 +55,7 @@ const renderJevSkipBox = (
   const details = advisorResultDetails(result);
   const lines = [
     theme.fg("dim", theme.bold("◆ ADVISOR · SKIPPED")),
-    theme.fg("dim", `  ${details?.jev?.reason ?? ""}`),
+    theme.fg("dim", `  ${details?.skipReason ?? details?.jev?.reason ?? ""}`),
   ];
   box.addChild(new Text(lines.join("\n"), 0, 0));
   box.addChild(
@@ -157,8 +157,8 @@ const renderFinalAdvisorResult = (
     context.state.timerId = undefined;
   }
   const details = advisorResultDetails(result);
-  if (details?.jev?.skipped) {
-    renderJevSkipBox(box, result, expanded, theme);
+  if (details?.jev?.skipped || details?.skipReason) {
+    renderSkipBox(box, result, expanded, theme);
     return;
   }
   if (details?.scout) {

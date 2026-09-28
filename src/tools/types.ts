@@ -91,6 +91,7 @@ export interface AdvisorToolDetails {
   preferenceBytes?: number;
   question?: string;
   scout?: ScoutToolDetails;
+  skipReason?: string;
   text?: string;
   thinking?: string;
   trackedBytes?: number;

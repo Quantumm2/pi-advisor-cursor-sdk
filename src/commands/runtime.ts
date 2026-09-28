@@ -7,6 +7,10 @@ import { getAdvisorSettings } from "../config/state.ts";
 import { herdrAdvisorActivity, notifyHerdrAdvisorFailure } from "../herdr.ts";
 import type { AdvisorSessionState } from "../session-state.ts";
 import { consultAdvisor } from "../tools/consultation.ts";
+import {
+  sameModelAdvisorDisabled,
+  sameModelAdvisorNotice,
+} from "../tools/model-access.ts";
 import { ScoutStatusManager } from "../tools/scout-status.ts";
 import { advisorSessionState as defaultAdvisorSessionState } from "../tools/session.ts";
 import type {
@@ -55,6 +59,7 @@ class CommandRuntime implements CommandRuntimeContract {
   manualProgressSequence = 0;
   pendingExecutorModelRef: string | undefined;
   suppressModelSelectionSync = false;
+  private lastSameModelDisabled: boolean | undefined;
 
   constructor(pi: ExtensionAPI, dependencies: CommandDependencies = {}) {
     this.pi = pi;
@@ -82,6 +87,30 @@ class CommandRuntime implements CommandRuntimeContract {
 
   flowEnabled() {
     return this.pi.getActiveTools().includes("ask_advisor");
+  }
+
+  resetSameModelNotice() {
+    this.lastSameModelDisabled = undefined;
+  }
+
+  updateSameModelNotice(
+    ctx: ExtensionContext,
+    model: { id: string; provider: string } | undefined = ctx.model
+  ) {
+    if (!this.flowEnabled()) {
+      return;
+    }
+    const disabled = sameModelAdvisorDisabled(ctx, model);
+    if (disabled && this.lastSameModelDisabled !== true) {
+      notify(ctx, sameModelAdvisorNotice, "info");
+    } else if (!disabled && this.lastSameModelDisabled === true) {
+      notify(
+        ctx,
+        "Advisor re-enabled: executor and advisor models differ.",
+        "info"
+      );
+    }
+    this.lastSameModelDisabled = disabled;
   }
 
   nextManualProgressId() {

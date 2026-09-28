@@ -36,6 +36,7 @@ export const registerSettingsCommands = (runtime: CommandRuntime) => {
             onChange: (settings) => {
               try {
                 saveAdvisorSettings(ctx, settings);
+                runtime.updateSameModelNotice(ctx);
                 runtime.updateAdvisorUsageStatus(ctx);
               } catch (error) {
                 const message =
@@ -65,6 +66,7 @@ export const registerSettingsCommands = (runtime: CommandRuntime) => {
               name !== "ask_advisor" && name !== "record_advisor_outcome"
           )
       );
+      runtime.resetSameModelNotice();
       // Leaving alwaysOn set would silently reactivate the flow next session.
       const wasAlwaysOn = alwaysOnRef;
       if (wasAlwaysOn) {
