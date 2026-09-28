@@ -115,7 +115,7 @@ describe("Advisor image disclosure", () => {
     );
     expect(labelParts).toHaveLength(1);
     expect(labelParts[0].text.startsWith("\n\n")).toBe(true);
-    expect(text(request)).toContain("2 image(s) attached");
+    expect(text(request)).toContain("1 image(s) attached");
     const toolOnly = await capturedConsultation(
       ["text", "image"],
       [entries[1]]
