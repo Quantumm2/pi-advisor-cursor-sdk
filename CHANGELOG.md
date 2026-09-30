@@ -8,6 +8,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
+- Overrode transitive `brace-expansion` 5.0.12 and `undici` 8.11.2 to clear four high-severity audit advisories (stack-exhaustion DoS, WebSocket subprotocol DoS, TLS validation bypass).
+
 - Fixed manual Advisor consultations crashing non-interactive (`--print`) sessions on Pi 0.99: UI status updates and scout lifecycle reads now no-op safely once the session context is retired instead of throwing, `/advisor-manual` completes within the command handler in print mode, and streaming tool-result repaint timers stop once their renderer is gone.
 
 ### Changed

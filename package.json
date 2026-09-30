@@ -92,10 +92,10 @@
     "safe-buffer": "npm:@socketregistry/safe-buffer@1.0.9"
   },
   "overrides": {
-    "brace-expansion": "5.0.9",
+    "brace-expansion": "5.0.12",
     "is-unicode-supported": "npm:@socketregistry/is-unicode-supported@1.0.5",
     "safe-buffer": "npm:@socketregistry/safe-buffer@1.0.9",
-    "undici": "8.9.0"
+    "undici": "8.11.2"
   },
   "lint-staged": {
     "*.{ts,tsx}": [
