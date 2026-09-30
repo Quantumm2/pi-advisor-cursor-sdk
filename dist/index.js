@@ -3884,6 +3884,30 @@ var runAdvisorGate = async (ctx, question, trigger = "repeated-tool-call", signa
 // src/tools/scout-status.ts
 import { Text as Text2 } from "@earendil-works/pi-tui";
 
+// src/ui-guard.ts
+var isStaleContext = (error) => error instanceof Error && /stale/iu.test(error.message);
+var uiAvailable = (ctx) => {
+  try {
+    return ctx.hasUI;
+  } catch (error) {
+    if (isStaleContext(error)) {
+      return false;
+    }
+    throw error;
+  }
+};
+var uiAction = (ctx, action) => {
+  try {
+    if (ctx.hasUI) {
+      action(ctx.ui);
+    }
+  } catch (error) {
+    if (!isStaleContext(error)) {
+      throw error;
+    }
+  }
+};
+
 // src/tools/render-common.ts
 import { getMarkdownTheme } from "@earendil-works/pi-coding-agent";
 import {
@@ -4071,14 +4095,14 @@ class ScoutStatusManager {
     }
   }
   update(ctx, token, event) {
-    if (this.#retired.has(token) || !ctx.hasUI) {
+    if (this.#retired.has(token) || !uiAvailable(ctx)) {
       return;
     }
     this.#known.add(token);
     if (event.type === "call" || event.type === "chunk") {
       this.#active.add(token);
       if (this.showStatus) {
-        ctx.ui.setStatus("advisor-scout", "Scout curating…");
+        uiAction(ctx, (ui) => ui.setStatus("advisor-scout", "Scout curating…"));
       }
       return;
     }
@@ -4088,10 +4112,10 @@ class ScoutStatusManager {
     this.#active.delete(token);
     this.#known.delete(token);
     this.#retired.add(token);
-    if (!(ctx.hasUI && this.showStatus)) {
+    if (!(uiAvailable(ctx) && this.showStatus)) {
       return;
     }
-    ctx.ui.setStatus("advisor-scout", this.#active.size > 0 ? "Scout curating…" : undefined);
+    uiAction(ctx, (ui) => ui.setStatus("advisor-scout", this.#active.size > 0 ? "Scout curating…" : undefined));
   }
   clear(ctx) {
     for (const token of this.#known) {
@@ -4099,8 +4123,8 @@ class ScoutStatusManager {
     }
     this.#known.clear();
     this.#active.clear();
-    if (ctx.hasUI && this.showStatus) {
-      ctx.ui.setStatus("advisor-scout", undefined);
+    if (this.showStatus) {
+      uiAction(ctx, (ui) => ui.setStatus("advisor-scout", undefined));
     }
   }
 }
@@ -4638,9 +4662,7 @@ var advisorSessionState = new AdvisorSessionState;
 
 // src/commands/runtime.ts
 var notify = (ctx, message, level) => {
-  if (ctx.hasUI) {
-    ctx.ui.notify(message, level);
-  }
+  uiAction(ctx, (ui) => ui.notify(message, level));
 };
 var reportManualBudgetExhausted = (ctx) => {
   const message = "Advisor call budget exhausted for this session.";
@@ -4648,9 +4670,7 @@ var reportManualBudgetExhausted = (ctx) => {
   notifyHerdrAdvisorFailure("Advisor budget exhausted", message);
 };
 var requestManualRender = (ctx) => {
-  if (ctx.hasUI) {
-    ctx.ui.setStatus("advisor-manual", undefined);
-  }
+  uiAction(ctx, (ui) => ui.setStatus("advisor-manual", undefined));
 };
 
 class CommandRuntime {
@@ -4706,9 +4726,7 @@ class CommandRuntime {
     }
   }
   updateAdvisorUsageStatus(ctx) {
-    if (ctx.hasUI) {
-      ctx.ui.setStatus("advisor-usage", getAdvisorSettings().showUsageFooter ? this.advisorSessionState.usageStatus() : undefined);
-    }
+    uiAction(ctx, (ui) => ui.setStatus("advisor-usage", getAdvisorSettings().showUsageFooter ? this.advisorSessionState.usageStatus() : undefined));
   }
 }
 var createCommandRuntime = (pi, dependencies = {}) => new CommandRuntime(pi, dependencies);
@@ -5849,9 +5867,10 @@ var screeningSkipText = (outcome) => outcome.kind === "repeat" && outcome.reatta
 
 // src/commands/manual-consultation.ts
 var startManualConsultation = async (runtime, ctx, question, controller, scoutStatusToken, progress, gitContext) => {
+  const isPrintMode = ctx.mode === "print";
   progress.phase = "preparing";
   runtime.requestManualRender(ctx);
-  if (ctx.hasUI) {
+  if (uiAvailable(ctx)) {
     const timer = setInterval(() => {
       if (controller.signal.aborted || runtime.manualConsultations.get(controller) !== scoutStatusToken) {
         clearInterval(timer);
@@ -5916,7 +5935,7 @@ ${markdown}`,
       display: true
     }, {
       deliverAs: "steer",
-      triggerTurn: true
+      triggerTurn: !isPrintMode
     });
   } catch (error) {
     if (controller.signal.aborted) {
@@ -5941,7 +5960,7 @@ ${markdown}`,
         text: `**Advisor consultation failed:** ${message}`
       },
       display: true
-    }, { deliverAs: "steer", triggerTurn: true });
+    }, { deliverAs: "steer", triggerTurn: !isPrintMode });
     notify(ctx, `Advisor consultation failed: ${message}`, "error");
     notifyHerdrAdvisorFailure("Advisor consultation failed", message);
   } finally {
@@ -6035,7 +6054,15 @@ var registerManualCommand = (runtime) => {
       runtime.scoutStatus.register(scoutStatusToken);
       runtime.manualConsultations.set(controller, scoutStatusToken);
       runtime.pi.appendEntry?.("advisor-manual-call", { progressId, question });
-      startManualConsultation(runtime, ctx, question, controller, scoutStatusToken, progress, gitContext);
+      if (ctx.mode === "print") {
+        await startManualConsultation(runtime, ctx, question, controller, scoutStatusToken, progress, gitContext);
+        return;
+      }
+      (async () => {
+        try {
+          await startManualConsultation(runtime, ctx, question, controller, scoutStatusToken, progress, gitContext);
+        } catch {}
+      })();
     }
   });
 };
@@ -7769,7 +7796,14 @@ var renderPartialAdvisorResult = (box, result, expanded, theme, context) => {
   const scoutActive = scout?.status === "calling" || scout?.status === "streaming";
   syncRenderPhase(context, scoutActive ? "scout" : "advisor");
   if (!context.state.timerId) {
-    context.state.timerId = setInterval(() => context.invalidate(), 80);
+    context.state.timerId = setInterval(() => {
+      try {
+        context.invalidate();
+      } catch {
+        clearInterval(context.state.timerId);
+        context.state.timerId = undefined;
+      }
+    }, 80);
   }
   if (scout) {
     renderScoutDetails(box, scout, expanded, theme);

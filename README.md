@@ -41,7 +41,7 @@ Regular consultations never block execution. Automatic loop gates are different:
 
 ## Install
 
-Requires Pi 0.84.1 or later. Pi 0.85.0 is not supported (broken upstream release); use Pi 0.85.1 or later instead.
+Requires Pi 0.87.1+ (0.87.x) or 0.99.1+ (0.99.x).
 
 ```bash
 pi install npm:pi-advisor-flow

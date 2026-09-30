@@ -112,18 +112,38 @@ export const registerManualCommand = (runtime: CommandRuntime) => {
       runtime.scoutStatus.register(scoutStatusToken);
       runtime.manualConsultations.set(controller, scoutStatusToken);
       runtime.pi.appendEntry?.("advisor-manual-call", { progressId, question });
+      // Print mode tears the session down when the handler returns, so the
+      // consultation must complete inside the handler to keep its ctx valid.
+      if (ctx.mode === "print") {
+        await startManualConsultation(
+          runtime,
+          ctx,
+          question,
+          controller,
+          scoutStatusToken,
+          progress,
+          gitContext
+        );
+        return;
+      }
       // Intentional fire-and-forget: the consultation streams after the command
-      // handler returns. void satisfies noFloatingPromises; noVoid is ignored here
-      // because this Biome version offers no ignoreVoidAsExpression option.
-      void startManualConsultation(
-        runtime,
-        ctx,
-        question,
-        controller,
-        scoutStatusToken,
-        progress,
-        gitContext
-      );
+      // handler returns. A rejected consultation must not escape as an
+      // unhandled rejection; its error paths already notify and record.
+      void (async () => {
+        try {
+          await startManualConsultation(
+            runtime,
+            ctx,
+            question,
+            controller,
+            scoutStatusToken,
+            progress,
+            gitContext
+          );
+        } catch {
+          // Consultation error paths already notify and record; nothing to add.
+        }
+      })();
     },
   });
 };

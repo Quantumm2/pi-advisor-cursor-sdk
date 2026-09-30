@@ -93,6 +93,7 @@ const expectedFiles = [
   "src/tools/scout-status.ts",
   "src/tools/session.ts",
   "src/tools/types.ts",
+  "src/ui-guard.ts",
   "src/ui.ts",
   "src/ui/jev-setup-submenu.ts",
   "src/ui/manual-dialog-render.ts",

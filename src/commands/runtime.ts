@@ -13,6 +13,7 @@ import {
 } from "../tools/model-access.ts";
 import { ScoutStatusManager } from "../tools/scout-status.ts";
 import { advisorSessionState as defaultAdvisorSessionState } from "../tools/session.ts";
+import { uiAction } from "../ui-guard.ts";
 import type {
   CommandDependencies,
   CommandRuntime as CommandRuntimeContract,
@@ -25,9 +26,7 @@ export const notify = (
   message: string,
   level: "error" | "info" | "warning"
 ) => {
-  if (ctx.hasUI) {
-    ctx.ui.notify(message, level);
-  }
+  uiAction(ctx, (ui) => ui.notify(message, level));
 };
 
 const reportManualBudgetExhausted = (ctx: ExtensionContext) => {
@@ -37,9 +36,7 @@ const reportManualBudgetExhausted = (ctx: ExtensionContext) => {
 };
 
 const requestManualRender = (ctx: ExtensionContext) => {
-  if (ctx.hasUI) {
-    ctx.ui.setStatus("advisor-manual", undefined);
-  }
+  uiAction(ctx, (ui) => ui.setStatus("advisor-manual", undefined));
 };
 
 class CommandRuntime implements CommandRuntimeContract {
@@ -130,14 +127,14 @@ class CommandRuntime implements CommandRuntimeContract {
   }
 
   updateAdvisorUsageStatus(ctx: ExtensionContext) {
-    if (ctx.hasUI) {
-      ctx.ui.setStatus(
+    uiAction(ctx, (ui) =>
+      ui.setStatus(
         "advisor-usage",
         getAdvisorSettings().showUsageFooter
           ? this.advisorSessionState.usageStatus()
           : undefined
-      );
-    }
+      )
+    );
   }
 }
 

@@ -100,7 +100,15 @@ const renderPartialAdvisorResult = (
     scout?.status === "calling" || scout?.status === "streaming";
   syncRenderPhase(context, scoutActive ? "scout" : "advisor");
   if (!context.state.timerId) {
-    context.state.timerId = setInterval(() => context.invalidate(), 80);
+    context.state.timerId = setInterval(() => {
+      try {
+        context.invalidate();
+      } catch {
+        // Renderer context is gone; stop repainting and drop the timer.
+        clearInterval(context.state.timerId);
+        context.state.timerId = undefined;
+      }
+    }, 80);
   }
   if (scout) {
     renderScoutDetails(box, scout, expanded, theme);

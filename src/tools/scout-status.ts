@@ -8,6 +8,7 @@ import type { Box } from "@earendil-works/pi-tui";
 
 import { executorRef, getAdvisorSettings } from "../config/state.ts";
 import type { ScoutLifecycleEvent } from "../scout.ts";
+import { uiAction, uiAvailable } from "../ui-guard.ts";
 import { formatAdvisorUsage, snapshotAdvisorUsage } from "../usage.ts";
 import { renderThinkingMarkdown, SPINNER_FRAMES } from "./render-common.ts";
 import type { ScoutToolDetails } from "./types.ts";
@@ -91,14 +92,14 @@ export class ScoutStatusManager {
   }
 
   update(ctx: ExtensionContext, token: symbol, event: ScoutLifecycleEvent) {
-    if (this.#retired.has(token) || !ctx.hasUI) {
+    if (this.#retired.has(token) || !uiAvailable(ctx)) {
       return;
     }
     this.#known.add(token);
     if (event.type === "call" || event.type === "chunk") {
       this.#active.add(token);
       if (this.showStatus) {
-        ctx.ui.setStatus("advisor-scout", "Scout curating…");
+        uiAction(ctx, (ui) => ui.setStatus("advisor-scout", "Scout curating…"));
       }
       return;
     }
@@ -109,12 +110,14 @@ export class ScoutStatusManager {
     this.#active.delete(token);
     this.#known.delete(token);
     this.#retired.add(token);
-    if (!(ctx.hasUI && this.showStatus)) {
+    if (!(uiAvailable(ctx) && this.showStatus)) {
       return;
     }
-    ctx.ui.setStatus(
-      "advisor-scout",
-      this.#active.size > 0 ? "Scout curating…" : undefined
+    uiAction(ctx, (ui) =>
+      ui.setStatus(
+        "advisor-scout",
+        this.#active.size > 0 ? "Scout curating…" : undefined
+      )
     );
   }
 
@@ -124,8 +127,8 @@ export class ScoutStatusManager {
     }
     this.#known.clear();
     this.#active.clear();
-    if (ctx.hasUI && this.showStatus) {
-      ctx.ui.setStatus("advisor-scout", undefined);
+    if (this.showStatus) {
+      uiAction(ctx, (ui) => ui.setStatus("advisor-scout", undefined));
     }
   }
 }

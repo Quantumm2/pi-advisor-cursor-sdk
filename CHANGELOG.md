@@ -4,6 +4,21 @@ All notable changes to this project are documented here.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0/).
 
+## Unreleased
+
+### Fixed
+
+- Fixed manual Advisor consultations crashing non-interactive (`--print`) sessions on Pi 0.99: UI status updates and scout lifecycle reads now no-op safely once the session context is retired instead of throwing, `/advisor-manual` completes within the command handler in print mode, and streaming tool-result repaint timers stop once their renderer is gone.
+
+### Changed
+
+- Added Pi 0.99.x support (peer range `^0.87.1 || ^0.99.1`); Pi 0.99's context-lifecycle enforcement is now honored. Manual consultation results no longer trigger a follow-up turn in print mode.
+- Updated the dev toolchain: oxlint 1.86.0, @oxlint/plugins 1.86.0, oxfmt 0.71.0, ultracite 7.12.2, knip 6.39.0.
+
+### Added
+
+- Regression tests covering stale-context resilience of the guarded UI helpers.
+
 ## 0.9.0 - 2026-09-28
 
 ### Added

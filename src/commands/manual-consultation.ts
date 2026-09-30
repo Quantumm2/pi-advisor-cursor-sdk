@@ -7,6 +7,7 @@ import { notifyHerdrAdvisorFailure } from "../herdr.ts";
 import { normalizeScreeningQuestion } from "../tools/jev-filter.ts";
 import { appendScoutLifecycleEntry } from "../tools/scout-status.ts";
 import type { ScoutToolDetails } from "../tools/types.ts";
+import { uiAvailable } from "../ui-guard.ts";
 import { advisorUsageCost, snapshotAdvisorUsage } from "../usage.ts";
 import type { AdvisorUsageSnapshot } from "../usage.ts";
 import { notify } from "./runtime.ts";
@@ -28,9 +29,10 @@ export const startManualConsultation = async (
   progress: ManualAdvisorProgressState,
   gitContext?: GitContextLevel
 ) => {
+  const isPrintMode = ctx.mode === "print";
   progress.phase = "preparing";
   runtime.requestManualRender(ctx);
-  if (ctx.hasUI) {
+  if (uiAvailable(ctx)) {
     const timer = setInterval(() => {
       if (
         controller.signal.aborted ||
@@ -118,8 +120,10 @@ export const startManualConsultation = async (
       {
         // Steer lets the current turn finish its active work; the Executor sees
         // the result before its next model call rather than being interrupted.
+        // Print mode has no follow-up turn; triggering one trips pi's turn_end
+        // entry resolution during teardown.
         deliverAs: "steer",
-        triggerTurn: true,
+        triggerTurn: !isPrintMode,
       }
     );
   } catch (error) {
@@ -147,7 +151,7 @@ export const startManualConsultation = async (
         },
         display: true,
       },
-      { deliverAs: "steer", triggerTurn: true }
+      { deliverAs: "steer", triggerTurn: !isPrintMode }
     );
     notify(ctx, `Advisor consultation failed: ${message}`, "error");
     notifyHerdrAdvisorFailure("Advisor consultation failed", message);
