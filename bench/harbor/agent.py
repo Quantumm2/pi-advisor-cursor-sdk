@@ -99,7 +99,7 @@ class PiAdvisorAgent(Pi):
             command=(
                 "set -euo pipefail; "
                 "if command -v node >/dev/null 2>&1 && "
-                "node -e 'process.exit(process.versions.node.startsWith(\"22.\") ? 0 : 1)'; then "
+                "node -e 'const [major, minor] = process.versions.node.split(\".\").map(Number); process.exit(major > 22 || (major === 22 && minor >= 19) ? 0 : 1)'; then "
                 "node --version; "
                 "else "
                 f"{nvm_node_install_snippet()}; "

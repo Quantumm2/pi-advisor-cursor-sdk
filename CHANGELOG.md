@@ -4,6 +4,13 @@ All notable changes to this project are documented here.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0/).
 
+## Unreleased
+
+### Changed
+
+- Pi 0.87.x and 0.99.x hosts are no longer supported; Pi 1.0.x is now the supported Pi host and the peer range is `^1.0.0`.
+- Updated the development toolchain to the Pi 1.0.0 packages.
+
 ## 0.9.1 - 2026-09-30
 
 ### Fixed

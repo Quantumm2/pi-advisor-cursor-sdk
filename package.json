@@ -51,9 +51,9 @@
     "format:check": "oxfmt --check"
   },
   "devDependencies": {
-    "@earendil-works/pi-ai": "0.99.2",
-    "@earendil-works/pi-coding-agent": "0.99.2",
-    "@earendil-works/pi-tui": "0.99.2",
+    "@earendil-works/pi-ai": "1.0.0",
+    "@earendil-works/pi-coding-agent": "1.0.0",
+    "@earendil-works/pi-tui": "1.0.0",
     "@oxlint/plugins": "1.86.0",
     "@types/node": "^26.6.3",
     "@typesafe-ai/sdk": "^0.6.0",
@@ -68,9 +68,9 @@
     "ultracite": "7.12.2"
   },
   "peerDependencies": {
-    "@earendil-works/pi-ai": "^0.87.1 || ^0.99.1",
-    "@earendil-works/pi-coding-agent": "^0.87.1 || ^0.99.1",
-    "@earendil-works/pi-tui": "^0.87.1 || ^0.99.1",
+    "@earendil-works/pi-ai": "^1.0.0",
+    "@earendil-works/pi-coding-agent": "^1.0.0",
+    "@earendil-works/pi-tui": "^1.0.0",
     "typebox": "^1.1.38"
   },
   "peerDependenciesMeta": {
@@ -100,11 +100,7 @@
   "lint-staged": {
     "*.{ts,tsx}": [
       "oxfmt",
-      "oxlint --fix"
-    ],
-    "{src,test,scripts,tools,extensions}/**/*.{ts,tsx}": [
-      "oxfmt",
-      "oxlint --fix"
+      "oxlint --fix --no-error-on-unmatched-pattern"
     ],
     "*.{json,jsonc}": [
       "oxfmt"

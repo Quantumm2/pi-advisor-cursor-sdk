@@ -41,7 +41,7 @@ Regular consultations never block execution. Automatic loop gates are different:
 
 ## Install
 
-Requires Pi 0.87.1+ (0.87.x) or 0.99.1+ (0.99.x).
+Requires Pi 1.0.0+ (1.x).
 
 ```bash
 pi install npm:pi-advisor-flow

@@ -20,7 +20,7 @@ const prerequisites = (extensionPath: string) => ({
   authPresent: true,
   extensionPath,
   extensionVersion: "0.5.0",
-  piVersion: "0.84.4",
+  piVersion: "1.0.0",
 });
 
 describe("pi-advisor Harbor adapter boundary", () => {

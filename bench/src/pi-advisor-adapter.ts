@@ -25,7 +25,7 @@ const LINE_BREAK = /\r?\n/;
 const DEFAULT_EXTENSION_PATH = resolve(process.cwd(), "extensions/index.ts");
 const DEFAULT_COMMAND = resolve(process.cwd(), "bench/harbor/run-trial");
 const DEFAULT_EXTENSION_VERSION = PI_ADVISOR_VERSION;
-const DEFAULT_PI_VERSION = "0.84.4";
+const DEFAULT_PI_VERSION = "1.0.0";
 
 export type AdvisorAdapterMode = "executor" | "advisor";
 

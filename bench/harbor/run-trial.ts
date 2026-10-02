@@ -47,7 +47,7 @@ const DEFAULT_CODEX_BROKER_PATH = resolve(
 );
 const RECORDER_TARGET = "/bench-source/bench/harbor/recorder.ts";
 const CODEX_UPSTREAM_URL = "https://chatgpt.com/backend-api";
-const DEFAULT_PI_VERSION = "0.84.4";
+const DEFAULT_PI_VERSION = "1.0.0";
 const DEFAULT_EXTENSION_VERSION = PI_ADVISOR_VERSION;
 const DEFAULT_REACTBENCH_COMMIT = "11ff042e60ec83a613053fbd721a54ed4dbfdf6f";
 const BROKER_READY_PREFIX = "BENCH_CODEX_BROKER_PORT=";
