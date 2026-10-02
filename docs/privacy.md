@@ -33,6 +33,14 @@ Redaction and output limits reduce accidental disclosure; they are not a data-cl
   - `exclude` omits both call details and output.
 - Tools not listed in `advisorToolPolicies`, including custom and newly added tools, use `full` for backward compatibility.
 
+## Codemode disclosure
+
+Pi Codemode calls the same registered `ask_advisor` tool, with the same screening, context reconstruction, redaction, repository ceilings, and attachment consent. Nested tool results are not stored as transcript entries; pi-advisor does not retrieve them from Codemode's local variables or nested-call metadata.
+
+The existing `draft` can carry a concise, permitted summary of collected results. It is optionally redacted, capped at 8 KiB, and labelled as an unverified Executor claim, not independent evidence. It also reaches Jev when screening is enabled. Draft and question text are explicit disclosure and are not filtered by the source tools' `advisorToolPolicies`. Do not use them to copy excluded output, secrets, or file bodies withheld by repository or attachment settings. Prefer `gitContext` for patches so the configured ceiling remains effective.
+
+Historical Codemode calls and their emitted results are governed by the exact `codemode` tool policy, not by policies for tools called inside the script. Set `advisorToolPolicies.codemode` to `summary` or `exclude` when scripts or their output must be withheld from reconstructed history.
+
 ## Fallback and follow-up egress
 
 `advisorFallbackModel` receives the same prepared, redacted request as the primary model after a retryable primary resolution or provider failure. No fallback request is sent when the operation is cancelled, the fallback matches the active Executor, or request preparation fails. If both models fail, the local error includes both attempts without persisting either payload.

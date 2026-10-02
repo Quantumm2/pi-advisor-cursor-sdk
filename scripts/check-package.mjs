@@ -76,6 +76,7 @@ const expectedFiles = [
   "src/session-state.ts",
   "src/tool-result-cap.ts",
   "src/tools.ts",
+  "src/tools/advisor-output.ts",
   "src/tools/consult-context.ts",
   "src/tools/consultation.ts",
   "src/tools/gate-policy.ts",

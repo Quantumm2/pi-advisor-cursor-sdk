@@ -276,6 +276,12 @@ describe("Advisor follow-up payload cache", () => {
           ]);
           expect(second.details.followUp).toBe(true);
           expect(second.details.advisor).toBe("fallback-test/primary");
+          expect(second.structuredContent).toMatchObject({
+            adviceId: second.details.adviceId,
+            advisor: second.details.advisor,
+            followUp: true,
+            text: second.details.text,
+          });
           expect(second.content[0].text).toContain("Advisor follow-up");
           expect(session.consumedCalls).toBe(2);
           expect(second.details.adviceId).not.toBe(first.details.adviceId);

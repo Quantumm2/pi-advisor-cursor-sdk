@@ -89,6 +89,37 @@ In the Settings, enable Simple Mode for a quick start.
 
 Unknown fields in `advisor.json` are preserved for forward compatibility and reported as non-blocking warnings. Invalid recognized values fail their own Advisor call with a clear message instead of blocking every tool call.
 
+## Pi Codemode
+
+With Pi Codemode enabled and the Advisor flow active, call the existing tool through `tools.ask_advisor`; no separate review tool or workflow is needed:
+
+```js
+const commands = ["bun test", "bun run typecheck"];
+const checks = await Promise.all(
+  commands.map(async (command) => {
+    const result = await tools.bash({ command });
+    return {
+      command,
+      exit_code: result.exit_code,
+      truncated: result.truncated,
+    };
+  })
+);
+return await tools.ask_advisor({
+  draft: JSON.stringify({
+    checks,
+    remainingRisk: "Runtime behavior needs review.",
+  }),
+  gitContext: "full",
+});
+```
+
+Gather and filter deterministic results before paying for Advisor reasoning. Nested results are not transcript entries, so they are not automatically available to reconstructed Advisor context. Use the existing `draft` for permitted, concise summaries (8 KiB after optional redaction); these remain untrusted Executor claims, not independently verified evidence. `question` can focus a specific decision; omit it for general reviews. Use `gitContext` for patches so the user's configured disclosure ceiling applies, rather than copying a diff into the draft.
+
+Codemode receives `{ text, adviceId?, advisor?, followUp?, usage?, jev?, skipReason? }`. `text` preserves Advisor Markdown or the existing skip notice; `usage` is the same normalized snapshot shown in response details. Skipped calls have no new `adviceId`. Provider failures and blocked calls reject. Regular consultations never become loop-gate decisions. Interactive responses and usage accounting are unchanged.
+
+Draft text is explicit disclosure: it does **not** inherit the policies of the tools that produced it. Do not copy excluded tool output, secrets, or unconsented file bodies into `draft` or `question`. Jev may also receive the draft when screening is enabled. See [Privacy and data handling](docs/privacy.md).
+
 ## Usage and accounting
 
 Advisor responses show provider-reported input, output, cache, and cost details when available. Successful `ask_advisor` calls also carry normalized usage into Pi's built-in `/cost` totals. Manual consultations and automatic gates keep their own session-local accounting instead, so nothing is double-counted. Missing or partial provider usage is shown as unavailable rather than fabricated as zero. `/advisor-settings` controls both the per-response details and the optional cumulative footer independently. Configure `advisorFallbackModel` or choose **Fallback Advisor model** in the model/settings pickers to retry one failed primary request; the final response is labelled with the model that answered, and both failures are shown together.

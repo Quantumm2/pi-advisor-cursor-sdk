@@ -6,6 +6,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## Unreleased
 
+### Added
+
+- Native Pi Codemode composition for `ask_advisor`: scripts receive structured advice, IDs, normalized usage, and existing skip metadata, while interactive responses remain unchanged. Documented deterministic-check composition and explicit draft disclosure limits.
+
 ## 0.10.0 - 2026-10-02
 
 ### Added

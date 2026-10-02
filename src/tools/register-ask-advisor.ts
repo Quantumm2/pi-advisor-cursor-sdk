@@ -3,6 +3,7 @@ import type {
   ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
+import type { Static } from "typebox";
 
 import {
   advisorRef,
@@ -22,6 +23,7 @@ import {
   advisorUsageForPi,
   snapshotAdvisorUsage,
 } from "../usage.ts";
+import { advisorOutputSchema } from "./advisor-output.ts";
 import { assertAdvisorFollowUpPrivacy } from "./consultation.ts";
 import { notifyLocalFailure, updateAdvisorUsageStatus } from "./gate-policy.ts";
 import { normalizeScreeningQuestion, screeningSkipText } from "./jev-filter.ts";
@@ -106,6 +108,7 @@ const skippedSameModelResult = (
       skipReason: notice,
       text: notice,
     },
+    structuredContent: { skipReason: notice, text: notice },
   };
 };
 
@@ -138,7 +141,7 @@ export const registerAskAdvisorTool = ({
 }: ToolRegistrationContext): void => {
   pi.registerTool({
     description:
-      "Consult the on-demand Advisor model for strategic guidance. Call with an empty object for a contextual review; attach an optional draft for concrete plan or completion review. Use followUpTo with a new question to continue one cached consultation without rebuilding its redacted context. If the Advisor explicitly names a missing file, you may make a sequential fresh consultation with includeTrackedFiles when enabled and relevant.",
+      "Consult the on-demand Advisor model for strategic guidance. Call with an empty object for a contextual review; attach an optional draft for concrete plan or completion review. Use followUpTo with a new question to continue one cached consultation without rebuilding its redacted context. If the Advisor explicitly names a missing file, you may make a sequential fresh consultation with includeTrackedFiles when enabled and relevant. In Pi Codemode, gather and filter deterministic tool results first, then call tools.ask_advisor. Nested results are not automatically reconstructed: pass only permitted, concise summaries in draft (untrusted, capped at 8 KiB, not independently verified). Draft does not inherit source-tool disclosure policies; use gitContext for patches within the user's allowance.",
     async execute(_id, params, signal, onUpdate, ctx) {
       let followUp:
         | { adviceId: string; payload: AdvisorFollowUpPayload }
@@ -200,16 +203,18 @@ export const registerAskAdvisorTool = ({
           const skipText = screeningSkipText(screening);
           session.releaseCall(_id);
           reservedCalls.delete(_id);
+          const skipped = {
+            jev: {
+              kind: screening.kind,
+              reason: screening.reason,
+              skipped: true,
+            },
+            text: skipText,
+          };
           return {
             content: [{ text: skipText, type: "text" }],
-            details: {
-              jev: {
-                kind: screening.kind,
-                reason: screening.reason,
-                skipped: true,
-              },
-              text: skipText,
-            },
+            details: skipped,
+            structuredContent: skipped,
           };
         }
         if (sameModelAdvisorDisabled(ctx, ctx.model, followUp?.payload.model)) {
@@ -332,6 +337,15 @@ export const registerAskAdvisorTool = ({
           if (usage) {
             details.usage = usage;
           }
+          const structuredContent: Static<typeof advisorOutputSchema> = {
+            adviceId: result.adviceId,
+            advisor: result.model,
+            followUp: Boolean(result.followUp),
+            text: result.markdown,
+          };
+          if (usage) {
+            structuredContent.usage = usage;
+          }
           const response: AgentToolResult<AdvisorToolDetails> = {
             content: [
               {
@@ -340,6 +354,7 @@ export const registerAskAdvisorTool = ({
               },
             ],
             details,
+            structuredContent,
           };
           if (piUsage) {
             response.usage = piUsage;
@@ -372,6 +387,7 @@ export const registerAskAdvisorTool = ({
     },
     label: "Ask Advisor",
     name: "ask_advisor",
+    outputSchema: advisorOutputSchema,
     parameters: Type.Object({
       draft: Type.Optional(
         Type.String({

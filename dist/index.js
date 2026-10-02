@@ -8399,7 +8399,32 @@ var registerJevTurnGate = (on, registration) => {
 };
 
 // src/tools/register-ask-advisor.ts
+import { Type as Type2 } from "typebox";
+
+// src/tools/advisor-output.ts
 import { Type } from "typebox";
+var advisorOutputSchema = Type.Object({
+  adviceId: Type.Optional(Type.String()),
+  advisor: Type.Optional(Type.String()),
+  followUp: Type.Optional(Type.Boolean()),
+  jev: Type.Optional(Type.Object({
+    kind: Type.Union([Type.Literal("screened"), Type.Literal("repeat")]),
+    reason: Type.String(),
+    skipped: Type.Boolean()
+  })),
+  skipReason: Type.Optional(Type.String()),
+  text: Type.String({
+    description: "Advisor Markdown or consultation skip notice."
+  }),
+  usage: Type.Optional(Type.Object({
+    cacheRead: Type.Optional(Type.Number()),
+    cacheWrite: Type.Optional(Type.Number()),
+    cost: Type.Optional(Type.Number()),
+    input: Type.Optional(Type.Number()),
+    output: Type.Optional(Type.Number()),
+    totalTokens: Type.Optional(Type.Number())
+  }))
+});
 
 // src/tools/render-advisor-result.ts
 import { getMarkdownTheme as getMarkdownTheme4 } from "@earendil-works/pi-coding-agent";
@@ -8580,7 +8605,8 @@ var skippedSameModelResult = (id, notice, reservedCalls, session) => {
     details: {
       skipReason: notice,
       text: notice
-    }
+    },
+    structuredContent: { skipReason: notice, text: notice }
   };
 };
 var claimTrackedHandoff = (session, includeTrackedFiles) => {
@@ -8603,7 +8629,7 @@ var registerAskAdvisorTool = ({
   session
 }) => {
   pi.registerTool({
-    description: "Consult the on-demand Advisor model for strategic guidance. Call with an empty object for a contextual review; attach an optional draft for concrete plan or completion review. Use followUpTo with a new question to continue one cached consultation without rebuilding its redacted context. If the Advisor explicitly names a missing file, you may make a sequential fresh consultation with includeTrackedFiles when enabled and relevant.",
+    description: "Consult the on-demand Advisor model for strategic guidance. Call with an empty object for a contextual review; attach an optional draft for concrete plan or completion review. Use followUpTo with a new question to continue one cached consultation without rebuilding its redacted context. If the Advisor explicitly names a missing file, you may make a sequential fresh consultation with includeTrackedFiles when enabled and relevant. In Pi Codemode, gather and filter deterministic tool results first, then call tools.ask_advisor. Nested results are not automatically reconstructed: pass only permitted, concise summaries in draft (untrusted, capped at 8 KiB, not independently verified). Draft does not inherit source-tool disclosure policies; use gitContext for patches within the user's allowance.",
     async execute(_id, params, signal, onUpdate, ctx) {
       let followUp;
       try {
@@ -8648,16 +8674,18 @@ var registerAskAdvisorTool = ({
           const skipText = screeningSkipText(screening);
           session.releaseCall(_id);
           reservedCalls.delete(_id);
+          const skipped = {
+            jev: {
+              kind: screening.kind,
+              reason: screening.reason,
+              skipped: true
+            },
+            text: skipText
+          };
           return {
             content: [{ text: skipText, type: "text" }],
-            details: {
-              jev: {
-                kind: screening.kind,
-                reason: screening.reason,
-                skipped: true
-              },
-              text: skipText
-            }
+            details: skipped,
+            structuredContent: skipped
           };
         }
         if (sameModelAdvisorDisabled(ctx, ctx.model, followUp?.payload.model)) {
@@ -8745,6 +8773,15 @@ var registerAskAdvisorTool = ({
           if (usage) {
             details.usage = usage;
           }
+          const structuredContent = {
+            adviceId: result.adviceId,
+            advisor: result.model,
+            followUp: Boolean(result.followUp),
+            text: result.markdown
+          };
+          if (usage) {
+            structuredContent.usage = usage;
+          }
           const response = {
             content: [
               {
@@ -8754,7 +8791,8 @@ ${result.markdown}`,
                 type: "text"
               }
             ],
-            details
+            details,
+            structuredContent
           };
           if (piUsage) {
             response.usage = piUsage;
@@ -8783,26 +8821,27 @@ ${result.markdown}`,
     },
     label: "Ask Advisor",
     name: "ask_advisor",
-    parameters: Type.Object({
-      draft: Type.Optional(Type.String({
+    outputSchema: advisorOutputSchema,
+    parameters: Type2.Object({
+      draft: Type2.Optional(Type2.String({
         description: "Concise untrusted draft for plan or completion review; claims are not verification evidence."
       })),
-      followUpTo: Type.Optional(Type.String({
+      followUpTo: Type2.Optional(Type2.String({
         description: "Opaque adviceId from a prior successful consultation. Requires a new non-empty question and reuses that consultation's redacted payload; do not combine with draft, Git context, or file attachments."
       })),
-      force: Type.Optional(Type.Boolean({
+      force: Type2.Optional(Type2.Boolean({
         description: "Set true only when you judge a decision genuinely material after a consultation was screened out; bypasses screening."
       })),
-      gitContext: Type.Optional(Type.Union([Type.Literal("none"), Type.Literal("summary"), Type.Literal("full")], {
+      gitContext: Type2.Optional(Type2.Union([Type2.Literal("none"), Type2.Literal("summary"), Type2.Literal("full")], {
         description: "How much of the working tree to include. Use full when the review depends on the exact code changes, such as a completion review. Use summary for changed file names only, or none when the question is not about the current changes. The user's configured allowance is the ceiling and a larger request is narrowed to it."
       })),
-      includeTrackedFiles: Type.Optional(Type.Array(Type.String({
+      includeTrackedFiles: Type2.Optional(Type2.Array(Type2.String({
         description: "Exact tracked repository-relative files to attach after the Advisor explicitly names a file it cannot review. Requires global advisorTrackedFileContent consent; current working-tree contents are sent as untrusted data."
       }))),
-      includeUntracked: Type.Optional(Type.Array(Type.String({
+      includeUntracked: Type2.Optional(Type2.Array(Type2.String({
         description: "Exact new repository-relative files to include only when user configuration allows it."
       }))),
-      question: Type.Optional(Type.String({
+      question: Type2.Optional(Type2.String({
         description: "The specific question or decision to get advice on. Omit this for normal reviews: the Advisor already has the conversation context."
       }))
     }),
@@ -9067,7 +9106,7 @@ ${guidelines.map((rule) => `- ${rule}`).join(`
 
 // src/tools/register-outcome.ts
 import { Text as Text6 } from "@earendil-works/pi-tui";
-import { Type as Type2 } from "typebox";
+import { Type as Type3 } from "typebox";
 var registerOutcomeTool = ({
   appendOutcome: appendAdvisorOutcome,
   pi,
@@ -9121,10 +9160,10 @@ var registerOutcomeTool = ({
     },
     label: "Record Advisor Outcome",
     name: "record_advisor_outcome",
-    parameters: Type2.Object({
-      adoption: Type2.String({ enum: ADOPTIONS }),
-      adviceId: Type2.String(),
-      validationStatus: Type2.String({ enum: VALIDATIONS })
+    parameters: Type3.Object({
+      adoption: Type3.String({ enum: ADOPTIONS }),
+      adviceId: Type3.String(),
+      validationStatus: Type3.String({ enum: VALIDATIONS })
     }),
     renderCall: () => new Text6("[advisor] Record outcome", 0, 0),
     renderResult: (result) => new Text6(textFrom(result.content), 0, 0)
