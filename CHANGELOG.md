@@ -6,6 +6,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## Unreleased
 
+## 0.10.0 - 2026-10-02
+
 ### Added
 
 - Added an optional `advisorFallbackModel`, selectable from `/advisor-models` and `/advisor-settings`, that retries a failed primary Advisor request once while attributing the response to the model that answered.
