@@ -33,6 +33,7 @@ const runModelsCommand = async (agentDir: string) => {
         getAvailable: () => [
           { id: "executor", provider: "provider" },
           { id: "advisor", provider: "provider" },
+          { id: "fallback", provider: "provider" },
         ],
       },
       ui: {
@@ -281,6 +282,34 @@ describe("Advisor model command thinking levels", () => {
         const { saved } = await runModelsCommand(agentDir);
         expect(saved.executorEffort).toBe("low");
         expect(saved.advisorEffort).toBe("high");
+      }
+    );
+  });
+
+  test("preserves an available optional fallback selection", async () => {
+    await withAgentDir(
+      {
+        advisor: "provider/advisor",
+        advisorFallbackModel: "provider/fallback",
+        executor: "provider/executor",
+      },
+      async (agentDir) => {
+        const { saved } = await runModelsCommand(agentDir);
+        expect(saved.advisorFallbackModel).toBe("provider/fallback");
+      }
+    );
+  });
+
+  test("does not reselect an unavailable fallback model", async () => {
+    await withAgentDir(
+      {
+        advisor: "provider/advisor",
+        advisorFallbackModel: "provider/stale",
+        executor: "provider/executor",
+      },
+      async (agentDir) => {
+        const { saved } = await runModelsCommand(agentDir);
+        expect(saved).not.toHaveProperty("advisorFallbackModel");
       }
     );
   });

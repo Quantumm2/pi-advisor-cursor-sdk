@@ -45,6 +45,7 @@ const expectedFiles = [
   "src/config/validation.ts",
   "src/content-utils.ts",
   "src/conversation.ts",
+  "src/follow-up.ts",
   "src/git.ts",
   "src/herdr-block.ts",
   "src/herdr-shared.ts",

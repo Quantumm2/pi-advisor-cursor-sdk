@@ -95,6 +95,16 @@ export const registerToolLifecycle = ({
       : undefined;
   });
 
+  pi.on("input", () => {
+    session.clearFollowUps();
+  });
+
+  pi.on("tool_result", (event) => {
+    if (event.toolName !== "ask_advisor") {
+      session.advanceFollowUpToolCall();
+    }
+  });
+
   pi.on("tool_call", (event, ctx) => {
     if (session.blocked) {
       return {
@@ -149,6 +159,7 @@ export const registerToolLifecycle = ({
 
   pi.on("session_shutdown", (_event, ctx) => {
     reservedCalls.clear();
+    session.clearFollowUps();
     session.clearCallReservations();
     scoutStatus.clear(ctx);
     herdrBlock.clear();

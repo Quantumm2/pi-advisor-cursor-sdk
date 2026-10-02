@@ -2,11 +2,13 @@ import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 
 import {
   advisorEffortRef,
+  advisorFallbackModelRef,
   advisorRef,
   executorEffortRef,
   executorRef,
   getPersistedModelRefs,
   setAdvisorEffortRef,
+  setAdvisorFallbackModelRef,
   setAdvisorRef,
   setExecutorEffortRef,
   setExecutorRef,
@@ -99,6 +101,7 @@ export const prepareActivationModels = async (
   const selection = await selectAdvisorModels(ctx, {
     advisor: advisorOverride || persisted.advisor ? advisorRef : "",
     advisorEffort: advisorEffortRef,
+    advisorFallbackModel: advisorFallbackModelRef,
     executor:
       executorOverride || plan.pendingExecutor || persisted.executor
         ? executorRef
@@ -111,6 +114,7 @@ export const prepareActivationModels = async (
     return;
   }
   setAdvisorRef(selection.advisor);
+  setAdvisorFallbackModelRef(selection.advisorFallbackModel);
   setAdvisorEffortRef(selection.advisorEffort);
   setExecutorRef(selection.executor);
   setExecutorEffortRef(selection.executorEffort);

@@ -1,10 +1,12 @@
 import {
   advisorEffortRef,
+  advisorFallbackModelRef,
   advisorRef,
   executorEffortRef,
   executorRef,
   getPersistedModelRefs,
   setAdvisorEffortRef,
+  setAdvisorFallbackModelRef,
   setAdvisorRef,
   setExecutorEffortRef,
   setExecutorRef,
@@ -24,7 +26,7 @@ export const registerModelCommands = (runtime: CommandRuntime) => {
 
   runtime.pi.registerCommand("advisor-models", {
     description:
-      "Select and persist the Executor and Advisor models with reasoning levels",
+      "Select and persist the Executor, Advisor, and optional fallback models with reasoning levels",
     handler: async (_args, ctx) => {
       if (!(loadCommandConfig(ctx) && ctx.hasUI)) {
         return;
@@ -36,6 +38,7 @@ export const registerModelCommands = (runtime: CommandRuntime) => {
       const selection = await selectAdvisorModels(ctx, {
         advisor: persisted.advisor ? advisorRef : "",
         advisorEffort: advisorEffortRef,
+        advisorFallbackModel: advisorFallbackModelRef,
         executor:
           runtime.pendingExecutorModelRef ??
           (persisted.executor ? executorRef : ""),
@@ -49,6 +52,7 @@ export const registerModelCommands = (runtime: CommandRuntime) => {
 
       setExecutorRef(selection.executor);
       setAdvisorRef(selection.advisor);
+      setAdvisorFallbackModelRef(selection.advisorFallbackModel);
       setExecutorEffortRef(selection.executorEffort);
       setAdvisorEffortRef(selection.advisorEffort);
 

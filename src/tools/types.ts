@@ -48,6 +48,7 @@ export interface AdvisorConsultationResult {
   adviceId: string;
   agentRulesBytes?: number;
   draftBytes?: number;
+  followUp?: boolean;
   imageBytes?: number;
   imageCount?: number;
   imageOmissions?: number;
@@ -89,6 +90,7 @@ export interface AdvisorToolDetails {
   adviceId?: string;
   advisor?: string;
   agentRulesBytes?: number;
+  followUp?: boolean;
   draftBytes?: number;
   imageBytes?: number;
   imageCount?: number;

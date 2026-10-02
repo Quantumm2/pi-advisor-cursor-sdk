@@ -85,11 +85,15 @@ export const resolveAdvisorRequest = (question?: string) =>
 
 export const renderAdvisorCallBox = (
   question: string | undefined,
-  theme: Theme
+  theme: Theme,
+  followUp = false
 ) => {
   const box = new Box(1, 1, (text) => theme.bg("customMessageBg", text));
   const label = theme.fg("customMessageLabel", theme.bold("[advisor]"));
-  const title = theme.fg("customMessageText", "Executor → Advisor");
+  const title = theme.fg(
+    "customMessageText",
+    followUp ? "Executor → Advisor · Follow-up" : "Executor → Advisor"
+  );
   box.addChild(
     new Text(
       question

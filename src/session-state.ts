@@ -1,5 +1,10 @@
 import { isRecordOf, isString } from "./content-utils.ts";
 import type { JsonValue } from "./content-utils.ts";
+import { AdvisorFollowUpCache } from "./follow-up.ts";
+import type {
+  AdvisorFollowUpLookup,
+  AdvisorFollowUpPayload,
+} from "./follow-up.ts";
 import { AdvisorJevLedgerState } from "./jev/ledger.ts";
 import type { AdvisorJevUsage } from "./jev/ledger.ts";
 import {
@@ -22,6 +27,7 @@ type ExecutionEffect = "continued" | "tool-blocked" | "session-blocked";
 export interface AdvisorInvocationRecord {
   cost?: number;
   decision?: GateDecision;
+  followUp?: boolean;
   executionEffect: ExecutionEffect;
   failure?: string;
   kind: "markdown" | "gate";
@@ -179,8 +185,13 @@ export class AdvisorSessionState {
   #consumedCalls = 0;
   #callReservations = new Set<string>();
   readonly #jev = new AdvisorJevLedgerState();
+  readonly #followUps: AdvisorFollowUpCache;
   #sessionTurnOrdinal = 0;
   #turnsSinceConsultation = 0;
+
+  constructor(now?: () => number) {
+    this.#followUps = new AdvisorFollowUpCache(now);
+  }
 
   resetTask() {
     this.#repetition = freshRepetition();
@@ -190,6 +201,7 @@ export class AdvisorSessionState {
     this.#consumedCalls = 0;
     this.#callReservations.clear();
     this.#jev.reset();
+    this.#followUps.clear();
     this.#sessionTurnOrdinal = 0;
     this.#turnsSinceConsultation = 0;
   }
@@ -266,6 +278,26 @@ export class AdvisorSessionState {
   }
   get consumedCalls() {
     return this.#consumedCalls;
+  }
+
+  advanceFollowUpToolCall() {
+    this.#followUps.advanceToolCall();
+  }
+
+  clearFollowUps() {
+    this.#followUps.clear();
+  }
+
+  followUpFor(adviceId: string): AdvisorFollowUpLookup {
+    return this.#followUps.get(adviceId);
+  }
+
+  captureFollowUp(
+    adviceId: string,
+    payload: AdvisorFollowUpPayload,
+    replacesAdviceId?: string
+  ) {
+    this.#followUps.capture(adviceId, payload, replacesAdviceId);
   }
 
   /** Counts one completed executor turn on both turn counters. The ordinal
@@ -495,6 +527,7 @@ export class AdvisorSessionState {
       `Budget: ${budget}`,
       `Usage: ${formatAdvisorUsageTotals(totals)}`,
       `Markdown advice: ${markdown.length} responses (${this.#ledger.draftConsultations} with drafts)`,
+      `Follow-ups: ${markdown.filter((item) => item.followUp).length}`,
       `Outcome reports: ${this.#ledger.outcomes}`,
       `Gate decisions: ${this.#decisionsLine()}`,
       `Loop matching: normalized tool signatures; ${this.#repetition.interventions} gate intervention${this.#repetition.interventions === 1 ? "" : "s"}`,

@@ -33,6 +33,12 @@ Redaction and output limits reduce accidental disclosure; they are not a data-cl
   - `exclude` omits both call details and output.
 - Tools not listed in `advisorToolPolicies`, including custom and newly added tools, use `full` for backward compatibility.
 
+## Fallback and follow-up egress
+
+`advisorFallbackModel` receives the same prepared, redacted request as the primary model after a retryable primary resolution or provider failure. No fallback request is sent when the operation is cancelled, the fallback matches the active Executor, or request preparation fails. If both models fail, the local error includes both attempts without persisting either payload.
+
+`followUpTo` reuses the exact post-redaction message payload held in memory for the prior `adviceId` and appends the new question after applying the current-or-stricter redaction policy. The cache is never written to the session or filesystem. It expires after five minutes, is cleared by a new user input or three later non-Advisor tool results, and is capped at three follow-up levels. Reuse is bound to the original project directory and trust state. Changing any tracked disclosure, tool-policy, context-cap, or redaction setting invalidates that cache instead of sending the old prefix under different privacy rules. Use a fresh consultation when new files, Git context, or other context must be disclosed.
+
 ## Project rules and preferences
 
 `advisorAgentsMdContext` defaults to `true`. In a trusted project, the project-root `AGENTS.md` and global `~/.pi/agent/AGENTS.md` may be sent with each Advisor call. The files are read through the same trusted-reader protections as project preferences: no symlinks, realpath containment, redaction, an 8 KiB per-source cap, and a combined 16 KiB rules cap. They are origin-labelled inside a separate `<project_rules>` block and framed as untrusted review guidance, not executable instructions.

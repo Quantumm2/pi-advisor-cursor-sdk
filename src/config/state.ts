@@ -25,6 +25,7 @@ import type {
 // An empty ref means no model has been selected yet.
 export let executorRef = "";
 export let advisorRef = "";
+export let advisorFallbackModelRef: string | undefined;
 export let advisorAgentsMdContextRef = true;
 let persistedExecutorRef: string | undefined;
 let persistedAdvisorRef: string | undefined;
@@ -80,6 +81,9 @@ export const setExecutorRef = (ref: string) => {
 };
 export const setAdvisorRef = (ref: string) => {
   advisorRef = ref;
+};
+export const setAdvisorFallbackModelRef = (ref: string | undefined) => {
+  advisorFallbackModelRef = ref?.trim() || undefined;
 };
 export const setAdvisorAgentsMdContextRef = (enabled: boolean) => {
   advisorAgentsMdContextRef = enabled;
@@ -250,6 +254,7 @@ export const getAdvisorSettings = () => ({
   effort: advisorEffortRef,
   failureGate: advisorFailureGateRef,
   failureMode: advisorFailureModeRef,
+  fallbackModel: advisorFallbackModelRef,
   gitContext: advisorGitContextRef,
   gitContextMaxChars: advisorGitContextMaxCharsRef,
   herdrIntegration: advisorHerdrIntegrationRef,

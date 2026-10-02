@@ -166,6 +166,7 @@ describe("Advisor activation flow", () => {
       expect(selectedModels).toEqual([
         "provider/chosen-executor",
         "provider/chosen-advisor",
+        "Disabled (no fallback)",
       ]);
       expect(savedConfig(agentDir)).toMatchObject({
         advisor: "provider/chosen-advisor",
@@ -254,7 +255,7 @@ describe("Advisor activation flow", () => {
         registerCommands(pi);
         await commands.get("advisor").handler("", ctx);
 
-        expect(customCalls).toBe(1);
+        expect(customCalls).toBe(2);
         expect(savedConfig(agentDir)).toMatchObject({
           advisor: "provider/replacement",
           executor: "provider/executor",
@@ -335,7 +336,11 @@ describe("Advisor activation flow", () => {
         await commands.get("advisor-models").handler("", ctx);
         await commands.get("advisor").handler("", ctx);
 
-        expect(selectedModels).toEqual(["provider/luna", "provider/luna"]);
+        expect(selectedModels).toEqual([
+          "provider/luna",
+          "provider/luna",
+          "Disabled (no fallback)",
+        ]);
         expect(savedConfig(agentDir)).toMatchObject({
           advisor: "provider/luna",
           executor: "provider/luna",

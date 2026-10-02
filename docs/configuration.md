@@ -12,6 +12,7 @@ All fields are optional. The model refs below are explicit examples of models av
 {
   "executor": "provider/executor-model",
   "advisor": "provider/advisor-model",
+  "advisorFallbackModel": "provider/backup-advisor-model",
   "executorEffort": "medium",
   "advisorEffort": "xhigh",
   "contextMaxChars": 25000,
@@ -57,9 +58,19 @@ All fields are optional. The model refs below are explicit examples of models av
 }
 ```
 
+## Advisor fallback model
+
+`advisorFallbackModel` is optional and empty by default. Select it from **Fallback Advisor model** in `/advisor-settings` or the optional slot in `/advisor-models`. When the primary Advisor cannot resolve credentials or the provider request fails, pi-advisor retries once with the fallback using the same privacy settings, model whitelist, budget reservation, and prepared request payload. A successful fallback counts as one consultation, not two, and the response is attributed to the model that answered. User cancellation, same-model suppression, and request-preparation failures do not silently bypass their existing controls. If both attempts fail, the combined primary and fallback error is surfaced. A fallback equal to the active Executor is skipped with a notice.
+
 ## Same-model consultations
 
 `advisorDisableSameModel` defaults to `true`. When the active Executor model is the same provider/model as the configured Advisor, `ask_advisor` returns a skipped result without calling the provider, screening with Jev, consuming a consultation, or using a tracked-file handoff. Manual calls and automatic gates are skipped too; they never create a tool or session block. The active model (including models selected by `/model`) is compared, not just the saved Executor setting. `/advisor`, `/advisor-models`, and model selection re-check the match and show a notice on transitions. Turn this setting off in `/advisor-settings` if you want a same-model consultation with a different reasoning level.
+
+## Follow-up consultations
+
+Pass `followUpTo` with a new non-empty `question` to `ask_advisor` to continue an existing response. The tool reuses the exact post-redaction payload prefix captured for that `adviceId` and appends only the follow-up question, so Scout does not rebuild the conversation. Jev screening, same-model suppression, the whitelist, current privacy policy, and the shared call budget still apply. Follow-ups count once against `advisorMaxCallsPerSession` and render a distinct follow-up usage line.
+
+Payloads are session-local and never persisted. They expire after five minutes, are cleared on a new user turn or after three subsequent non-Advisor tool results, and stop after three chained follow-ups. Reuse is bound to the original project directory, trust state, and disclosure settings. A successful follow-up advances the chain to a new `adviceId`; expired or unknown IDs return guidance to issue a fresh consultation. Follow-ups cannot add a draft, Git context override, or file attachments; use a fresh consultation for those.
 
 ## Advisor model whitelist
 

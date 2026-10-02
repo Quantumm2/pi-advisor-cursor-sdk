@@ -66,8 +66,11 @@ export interface ContextPreset {
   value: number;
 }
 
+export const FALLBACK_ADVISOR_MODEL_DISABLED = "Disabled (no fallback)";
+
 export interface AdvisorSettings {
   agentsMdContext?: boolean;
+  fallbackModel?: string;
   alwaysOn?: boolean;
   autoLoopGate?: boolean;
   blockOnBlocked?: boolean;

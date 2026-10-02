@@ -14,8 +14,10 @@ import { notify } from "./runtime.ts";
 import type { CommandRuntime, ManualAdvisorProgressState } from "./types.ts";
 
 interface ManualResultDetails {
+  adviceId?: string;
   advisor: string;
   agentRulesBytes?: number;
+  followUp?: boolean;
   preferenceBytes?: number;
   question?: string;
   text: string;
@@ -50,35 +52,42 @@ export const startManualConsultation = async (
   const finishHerdrActivity = runtime.herdrActivity.start();
   let scoutDetails: ScoutToolDetails | undefined;
   try {
-    const { adviceId, agentRulesBytes, markdown, preferenceBytes, usage } =
-      await runtime.requestAdvisor(
-        ctx,
-        question,
-        controller.signal,
-        (thinking, text) => {
-          if (controller.signal.aborted) {
-            return;
-          }
+    const {
+      adviceId,
+      agentRulesBytes,
+      followUp,
+      markdown,
+      model,
+      preferenceBytes,
+      usage,
+    } = await runtime.requestAdvisor(
+      ctx,
+      question,
+      controller.signal,
+      (thinking, text) => {
+        if (controller.signal.aborted) {
+          return;
+        }
+        progress.phase = "active";
+        progress.thinking = thinking;
+        progress.text = text;
+        runtime.requestManualRender(ctx);
+      },
+      (event) => {
+        if (!controller.signal.aborted) {
+          runtime.scoutStatus.update(ctx, scoutStatusToken, event);
+          scoutDetails = appendScoutLifecycleEntry(
+            runtime.pi,
+            event,
+            scoutDetails
+          );
+          progress.scout = scoutDetails;
           progress.phase = "active";
-          progress.thinking = thinking;
-          progress.text = text;
           runtime.requestManualRender(ctx);
-        },
-        (event) => {
-          if (!controller.signal.aborted) {
-            runtime.scoutStatus.update(ctx, scoutStatusToken, event);
-            scoutDetails = appendScoutLifecycleEntry(
-              runtime.pi,
-              event,
-              scoutDetails
-            );
-            progress.scout = scoutDetails;
-            progress.phase = "active";
-            runtime.requestManualRender(ctx);
-          }
-        },
-        gitContext
-      );
+        }
+      },
+      gitContext
+    );
     if (controller.signal.aborted) {
       return;
     }
@@ -87,8 +96,9 @@ export const startManualConsultation = async (
     runtime.advisorSessionState.recordInvocation({
       cost: advisorUsageCost(usage),
       executionEffect: "continued",
+      followUp,
       kind: "markdown",
-      model: advisorRef,
+      model: model ?? advisorRef,
       trigger: "manual",
       usage,
     });
@@ -105,8 +115,10 @@ export const startManualConsultation = async (
     }
     runtime.updateAdvisorUsageStatus(ctx);
     const details: ManualResultDetails = {
-      advisor: advisorRef,
+      adviceId,
+      advisor: model ?? advisorRef,
       agentRulesBytes,
+      followUp,
       preferenceBytes,
       question,
       text: markdown,

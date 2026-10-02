@@ -77,7 +77,15 @@ class CommandRuntime implements CommandRuntimeContract {
           undefined,
           undefined,
           undefined,
-          onScout
+          onScout,
+          undefined,
+          undefined,
+          (adviceId, payload, replacesAdviceId) =>
+            this.advisorSessionState.captureFollowUp(
+              adviceId,
+              payload,
+              replacesAdviceId
+            )
         ));
   }
 

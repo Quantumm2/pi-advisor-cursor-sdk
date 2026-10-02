@@ -21,17 +21,21 @@ import type {
 } from "../src/config.ts";
 import {
   advisorAgentsMdContextRef as facadeAdvisorAgentsMdContextRef,
+  advisorFallbackModelRef as facadeAdvisorFallbackModelRef,
   contextMaxCharsRef as facadeContextMaxCharsRef,
   DEFAULT_CONTEXT_MAX_CHARS as facadeDefaultContextMaxChars,
   loadConfig as facadeLoadConfig,
   setAdvisorAgentsMdContextRef as facadeSetAdvisorAgentsMdContextRef,
+  setAdvisorFallbackModelRef as facadeSetAdvisorFallbackModelRef,
   setContextMaxCharsRef as facadeSetContextMaxCharsRef,
   validateConfig as facadeValidateConfig,
 } from "../src/config.ts";
 import {
   advisorAgentsMdContextRef as leafAdvisorAgentsMdContextRef,
+  advisorFallbackModelRef as leafAdvisorFallbackModelRef,
   contextMaxCharsRef as leafContextMaxCharsRef,
   setAdvisorAgentsMdContextRef as leafSetAdvisorAgentsMdContextRef,
+  setAdvisorFallbackModelRef as leafSetAdvisorFallbackModelRef,
   setContextMaxCharsRef as leafSetContextMaxCharsRef,
 } from "../src/config/state.ts";
 import { loadConfig as leafLoadConfig } from "../src/config/storage.ts";
@@ -172,8 +176,12 @@ describe("config compatibility facade", () => {
   test("re-exports values from their owning leaf modules", () => {
     expect(facadeDefaultContextMaxChars).toBe(leafDefaultContextMaxChars);
     expect(facadeAdvisorAgentsMdContextRef).toBe(leafAdvisorAgentsMdContextRef);
+    expect(facadeAdvisorFallbackModelRef).toBe(leafAdvisorFallbackModelRef);
     expect(facadeSetAdvisorAgentsMdContextRef).toBe(
       leafSetAdvisorAgentsMdContextRef
+    );
+    expect(facadeSetAdvisorFallbackModelRef).toBe(
+      leafSetAdvisorFallbackModelRef
     );
     expect(facadeContextMaxCharsRef).toBe(leafContextMaxCharsRef);
     expect(facadeSetContextMaxCharsRef).toBe(leafSetContextMaxCharsRef);
@@ -260,6 +268,7 @@ describe("frozen facade export surfaces", () => {
       "advisorEffortRef",
       "advisorFailureGateRef",
       "advisorFailureModeRef",
+      "advisorFallbackModelRef",
       "advisorGitContextMaxCharsRef",
       "advisorGitContextRef",
       "advisorHerdrIntegrationRef",
@@ -308,6 +317,7 @@ describe("frozen facade export surfaces", () => {
       "setAdvisorEffortRef",
       "setAdvisorFailureGateRef",
       "setAdvisorFailureModeRef",
+      "setAdvisorFallbackModelRef",
       "setAdvisorGitContextMaxCharsRef",
       "setAdvisorGitContextRef",
       "setAdvisorHerdrIntegrationRef",

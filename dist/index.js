@@ -43,6 +43,7 @@ var GATE_FAILURE_MODES = [
 // src/config/state.ts
 var executorRef = "";
 var advisorRef = "";
+var advisorFallbackModelRef;
 var advisorAgentsMdContextRef = true;
 var persistedExecutorRef;
 var persistedAdvisorRef;
@@ -94,6 +95,9 @@ var setExecutorRef = (ref) => {
 };
 var setAdvisorRef = (ref) => {
   advisorRef = ref;
+};
+var setAdvisorFallbackModelRef = (ref) => {
+  advisorFallbackModelRef = ref?.trim() || undefined;
 };
 var setAdvisorAgentsMdContextRef = (enabled) => {
   advisorAgentsMdContextRef = enabled;
@@ -251,6 +255,7 @@ var getAdvisorSettings = () => ({
   effort: advisorEffortRef,
   failureGate: advisorFailureGateRef,
   failureMode: advisorFailureModeRef,
+  fallbackModel: advisorFallbackModelRef,
   gitContext: advisorGitContextRef,
   gitContextMaxChars: advisorGitContextMaxCharsRef,
   herdrIntegration: advisorHerdrIntegrationRef,
@@ -520,6 +525,12 @@ var CONFIG_SCHEMA = {
     current: () => advisorFailureGateRef,
     persisted: true,
     type: "boolean"
+  },
+  advisorFallbackModel: {
+    accepted: "a provider/model string",
+    current: () => configuredModelRef(advisorFallbackModelRef),
+    persisted: true,
+    type: "string"
   },
   advisorGitContext: {
     accepted: GIT_CONTEXT_LEVELS.join(", "),
@@ -868,6 +879,7 @@ import { CONFIG_DIR_NAME, getAgentDir } from "@earendil-works/pi-coding-agent";
 var resetDefaults = () => {
   setExecutorRef("");
   setAdvisorRef("");
+  setAdvisorFallbackModelRef(undefined);
   setAdvisorAgentsMdContextRef(true);
   setPersistedModelRefs(undefined, undefined);
   setExecutorEffortRef(undefined);
@@ -928,6 +940,7 @@ var applyNonEmptyStringConfig = (value, apply) => {
 var applyConfig = (config) => {
   applyNonEmptyStringConfig(config.executor, setExecutorRef);
   applyNonEmptyStringConfig(config.advisor, setAdvisorRef);
+  applyNonEmptyStringConfig(config.advisorFallbackModel, setAdvisorFallbackModelRef);
   applyNonEmptyStringConfig(config.executorEffort, setExecutorEffortRef);
   applyNonEmptyStringConfig(config.advisorEffort, setAdvisorEffortRef);
   applyOptionalConfig(config, "advisorAgentsMdContext", setAdvisorAgentsMdContextRef);
@@ -1136,14 +1149,16 @@ var advisorModelAccess = (ctx) => {
   }
   return denial;
 };
-var sameModelAdvisorDisabled = (ctx, model = ctx.model) => {
-  if (!(advisorDisableSameModelRef && advisorRef && model)) {
+var sameModelAdvisorDisabled = (ctx, model = ctx.model, advisorModelRef = advisorRef) => {
+  const selectedAdvisorRef = advisorModelRef ?? advisorRef;
+  if (!(advisorDisableSameModelRef && selectedAdvisorRef && model)) {
     return false;
   }
-  const [provider, id] = splitRef(advisorRef);
+  const [provider, id] = splitRef(selectedAdvisorRef);
   return provider === model.provider && id === model.id;
 };
 var sameModelAdvisorNotice = "Advisor disabled: executor and advisor are the same model.";
+var fallbackSameModelAdvisorNotice = "Advisor fallback skipped: executor and fallback Advisor are the same model.";
 var advisorModelIsAllowed = (ctx) => advisorModelAccess(ctx).allowed && !sameModelAdvisorDisabled(ctx);
 var advisorModelAccessReason = (ctx) => {
   const access = advisorModelAccess(ctx);
@@ -1465,6 +1480,9 @@ class SearchableModelSelector extends ModelSelectorAdapter {
   }
 }
 
+// src/ui/types.ts
+var FALLBACK_ADVISOR_MODEL_DISABLED = "Disabled (no fallback)";
+
 // src/commands/model-picker.ts
 var selectAdvisorModels = async (ctx, options) => {
   if (!ctx.hasUI) {
@@ -1478,7 +1496,13 @@ var selectAdvisorModels = async (ctx, options) => {
   const allOptions = [
     ...new Set(refs ?? [options.executor, options.advisor].filter((ref) => Boolean(ref)))
   ];
-  let { advisor, advisorEffort, executor, executorEffort } = options;
+  let {
+    advisor,
+    advisorEffort,
+    advisorFallbackModel,
+    executor,
+    executorEffort
+  } = options;
   if (options.selectExecutor) {
     const selectedExecutor = await ctx.ui.custom((tui, theme, keybindings, done) => new SearchableModelSelector({
       allOptions,
@@ -1521,10 +1545,36 @@ var selectAdvisorModels = async (ctx, options) => {
     advisor = selectedAdvisor;
     advisorEffort = selectedEffort(selectedAdvisorEffort);
   }
+  const selectedFallback = await ctx.ui.custom((tui, theme, keybindings, done) => new SearchableModelSelector({
+    allOptions: [
+      FALLBACK_ADVISOR_MODEL_DISABLED,
+      ...new Set([
+        ...allOptions,
+        ...refs || !advisorFallbackModel ? [] : [advisorFallbackModel]
+      ])
+    ],
+    currentOption: advisorFallbackModel ?? FALLBACK_ADVISOR_MODEL_DISABLED,
+    keybindings,
+    onCancel: () => done(undefined),
+    onSelect: done,
+    theme,
+    title: "Select Fallback Advisor Model (optional)",
+    tui
+  }));
+  if (selectedFallback === undefined) {
+    return;
+  }
+  advisorFallbackModel = selectedFallback === FALLBACK_ADVISOR_MODEL_DISABLED ? undefined : selectedFallback;
   if (!(advisor && executor)) {
     return;
   }
-  return { advisor, advisorEffort, executor, executorEffort };
+  return {
+    advisor,
+    advisorEffort,
+    advisorFallbackModel,
+    executor,
+    executorEffort
+  };
 };
 
 // src/herdr-shared.ts
@@ -3891,17 +3941,56 @@ var advisorImageNotice = (context) => {
 
 Image disclosure: ${disclosure}. Only the images explicitly attached below have pixels available. Other image markers, image paths, and text descriptions are not visual evidence.`;
 };
-var collectAdvisorResponse = async (options) => {
-  const { ctx, question, signal, systemPrompt } = options;
-  loadConfig(ctx);
-  if (sameModelAdvisorDisabled(ctx)) {
-    throw new Error(sameModelAdvisorNotice);
+var advisorPrivacyKey = (ctx) => {
+  const settings = getAdvisorSettings();
+  return JSON.stringify({
+    agentsMdContext: settings.agentsMdContext,
+    contextMaxChars: settings.contextMaxChars,
+    cwd: ctx.cwd,
+    gitContext: settings.gitContext,
+    gitContextMaxChars: settings.gitContextMaxChars,
+    projectTrusted: ctx.isProjectTrusted(),
+    redactSecrets: settings.redactSecrets,
+    scoutEnabled: settings.scoutEnabled,
+    toolPolicies: settings.toolPolicies,
+    toolResultMaxBytes: settings.toolResultMaxBytes,
+    toolResultMaxLines: settings.toolResultMaxLines,
+    trackedFileContent: settings.trackedFileContent,
+    untrackedContent: settings.untrackedContent
+  });
+};
+var assertAdvisorFollowUpPrivacy = (payload, ctx) => {
+  if (payload.privacyKey !== advisorPrivacyKey(ctx)) {
+    throw new Error("Follow-up consultation unavailable: privacy or disclosure settings changed after the original consultation. Issue a fresh consultation.");
   }
-  const accessReason = advisorModelAccessReason(ctx);
-  if (accessReason) {
-    throw new Error(accessReason);
+};
+var prepareFollowUp = (followUp, question, ctx) => {
+  if (!question?.trim()) {
+    throw new Error("Follow-up consultations require a non-empty question. Issue a fresh consultation if no question is needed.");
   }
-  const resolved = await resolveConfiguredModel(ctx, advisorRef, "Advisor");
+  assertAdvisorFollowUpPrivacy(followUp.payload, ctx);
+  const outboundQuestion = advisorRedactSecretsRef || followUp.payload.redacted ? redactSecrets(question) : question;
+  const messages = structuredClone(followUp.payload.messages);
+  messages.push({
+    content: [
+      {
+        text: `Follow-up focus:
+${outboundQuestion}`,
+        type: "text"
+      }
+    ],
+    role: "user",
+    timestamp: Date.now()
+  });
+  return {
+    messages,
+    privacyKey: followUp.payload.privacyKey,
+    redacted: advisorRedactSecretsRef || followUp.payload.redacted,
+    systemPrompt: followUp.payload.systemPrompt
+  };
+};
+var prepareFreshRequest = async (options, resolved) => {
+  const { question } = options;
   const context = await assembleConsultationContext({
     ...options,
     supportsImages: resolved.model.input.includes("image")
@@ -3929,42 +4018,136 @@ ${escapeRepositoryText(label)}: attached image pixels (untrusted data).`,
       timestamp: Date.now()
     }
   ];
-  const streamed = await collectTextStream(resolved, {
+  return {
+    context,
     messages,
+    privacyKey: advisorPrivacyKey(options.ctx),
+    redacted: advisorRedactSecretsRef,
+    systemPrompt: options.systemPrompt
+  };
+};
+var combinedFallbackError = (primaryModel, primaryError, fallbackModel, fallbackError) => new Error(`Advisor model ${primaryModel} failed: ${primaryError.message}. Fallback Advisor model ${fallbackModel} failed: ${fallbackError.message}.`, { cause: fallbackError });
+var advisorContextDetails = (context) => ({
+  agentRulesBytes: context?.projectRules?.bytes || undefined,
+  draftBytes: context?.draftText ? Buffer.byteLength(context.draftText, "utf-8") : undefined,
+  imageBytes: context?.images.reduce((sum, item) => sum + Buffer.from(item.image.data, "base64").length, 0) || undefined,
+  imageCount: context?.images.length,
+  imageOmissions: context?.imageOmissions || undefined,
+  imagePartsSeen: context?.imagePartsSeen || undefined,
+  preferenceBytes: context?.preferences?.bytes,
+  scout: context?.scout,
+  trackedBytes: context?.tracked.reduce((sum, item) => sum + item.bytes, 0) || undefined,
+  untrackedBytes: context?.untracked.reduce((sum, item) => sum + item.bytes, 0) || undefined
+});
+var runAdvisorAttempt = async (options, prepared, resolved, modelRef) => {
+  const streamed = await collectTextStream(resolved, {
+    messages: structuredClone(prepared.messages),
     onChunk: options.onChunk,
     reasoning: advisorEffortRef,
-    signal,
-    systemPrompt
+    signal: options.signal,
+    systemPrompt: prepared.systemPrompt
   });
-  const markdown = streamed.text;
+  const { text: markdown } = streamed;
   if (!markdown.trim()) {
     throw new AdvisorNoAdviceError;
   }
-  const response = {
-    agentRulesBytes: context.projectRules?.bytes || undefined,
-    draftBytes: context.draftText ? Buffer.byteLength(context.draftText, "utf-8") : undefined,
-    imageBytes: context.images.reduce((sum, item) => sum + Buffer.from(item.image.data, "base64").length, 0) || undefined,
-    imageCount: context.images.length,
-    imageOmissions: context.imageOmissions || undefined,
-    imagePartsSeen: context.imagePartsSeen || undefined,
+  return {
+    ...advisorContextDetails(prepared.context),
+    followUp: Boolean(options.followUp),
+    followUpPayload: {
+      depth: options.followUp ? options.followUp.payload.depth + 1 : 0,
+      messages: structuredClone(prepared.messages),
+      model: modelRef,
+      privacyKey: prepared.privacyKey,
+      redacted: prepared.redacted,
+      systemPrompt: prepared.systemPrompt
+    },
     markdown,
-    model: advisorRef,
-    preferenceBytes: context.preferences?.bytes,
+    model: modelRef,
     thinkingText: streamed.thinking,
-    trackedBytes: context.tracked.reduce((sum, item) => sum + item.bytes, 0) || undefined,
-    untrackedBytes: context.untracked.reduce((sum, item) => sum + item.bytes, 0) || undefined,
     usage: streamed.usage
   };
-  if (context.scout) {
-    response.scout = context.scout;
-  }
-  return response;
 };
-var consultAdvisor = async (ctx, question, signal, onChunk, trigger = "executor-requested", gitContext, draft, includeUntracked, includeTracked, onScout, currentInvocationId) => {
+var runFallbackAdvisorAttempt = async (options, primaryModel, primaryError, prepared) => {
+  const { ctx } = options;
+  let request = prepared;
+  if (!advisorFallbackModelRef) {
+    throw primaryError;
+  }
+  const fallbackModel = advisorFallbackModelRef;
+  if (fallbackModel === primaryModel) {
+    throw combinedFallbackError(primaryModel, primaryError, fallbackModel, new Error("fallback is the same model as the primary Advisor"));
+  }
+  if (sameModelAdvisorDisabled(ctx, ctx.model, fallbackModel)) {
+    throw combinedFallbackError(primaryModel, primaryError, fallbackModel, new Error(fallbackSameModelAdvisorNotice));
+  }
+  const fallbackAccessReason = advisorModelAccessReason(ctx);
+  if (fallbackAccessReason) {
+    throw combinedFallbackError(primaryModel, primaryError, fallbackModel, new Error(fallbackAccessReason));
+  }
+  let resolvedFallback;
+  try {
+    resolvedFallback = await resolveConfiguredModel(ctx, fallbackModel, "Advisor fallback");
+  } catch (error) {
+    throw combinedFallbackError(primaryModel, primaryError, fallbackModel, error instanceof Error ? error : new Error(String(error)));
+  }
+  if (!request) {
+    try {
+      request = options.followUp ? prepareFollowUp(options.followUp, options.question, options.ctx) : await prepareFreshRequest(options, resolvedFallback);
+    } catch (error) {
+      throw combinedFallbackError(primaryModel, primaryError, fallbackModel, error instanceof Error ? error : new Error(String(error)));
+    }
+  }
+  try {
+    return await runAdvisorAttempt(options, request, resolvedFallback, fallbackModel);
+  } catch (error) {
+    if (options.signal?.aborted) {
+      throw error;
+    }
+    throw combinedFallbackError(primaryModel, primaryError, fallbackModel, error instanceof Error ? error : new Error(String(error)));
+  }
+};
+var collectAdvisorResponse = async (options) => {
+  const { ctx, signal } = options;
+  loadConfig(ctx);
+  const primaryModel = options.followUp?.payload.model ?? advisorRef;
+  if (sameModelAdvisorDisabled(ctx, ctx.model, primaryModel)) {
+    throw new Error(primaryModel === advisorRef ? sameModelAdvisorNotice : fallbackSameModelAdvisorNotice);
+  }
+  const accessReason = advisorModelAccessReason(ctx);
+  if (accessReason) {
+    throw new Error(accessReason);
+  }
+  let primaryError;
+  let prepared;
+  let resolvedPrimary;
+  try {
+    resolvedPrimary = await resolveConfiguredModel(ctx, primaryModel, "Advisor");
+  } catch (error) {
+    primaryError = error instanceof Error ? error : new Error(String(error));
+  }
+  if (resolvedPrimary) {
+    prepared = options.followUp ? prepareFollowUp(options.followUp, options.question, options.ctx) : await prepareFreshRequest(options, resolvedPrimary);
+    try {
+      return await runAdvisorAttempt(options, prepared, resolvedPrimary, primaryModel);
+    } catch (error) {
+      primaryError = error instanceof Error ? error : new Error(String(error));
+    }
+  }
+  if (!primaryError) {
+    throw new Error("Advisor request failed before an error was recorded.");
+  }
+  if (signal?.aborted) {
+    throw primaryError;
+  }
+  return runFallbackAdvisorAttempt(options, primaryModel, primaryError, prepared);
+};
+var consultAdvisor = async (ctx, question, signal, onChunk, trigger = "executor-requested", gitContext, draft, includeUntracked, includeTracked, onScout, currentInvocationId, followUp, onFollowUpPayload) => {
   const result = await collectAdvisorResponse({
     ctx,
     currentInvocationId,
     draft,
+    followUp,
     gitContext,
     includeTracked,
     includeUntracked,
@@ -3974,7 +4157,10 @@ var consultAdvisor = async (ctx, question, signal, onChunk, trigger = "executor-
     signal,
     systemPrompt: ADVISOR_SYSTEM
   });
-  return { ...result, adviceId: randomUUID2(), trigger };
+  const adviceId = randomUUID2();
+  const { followUpPayload, ...publicResult } = result;
+  onFollowUpPayload?.(adviceId, followUpPayload, followUp?.adviceId);
+  return { ...publicResult, adviceId, trigger };
 };
 var runAdvisorGate = async (ctx, question, trigger = "repeated-tool-call", signal, onChunk, onScout, currentInvocationId) => {
   try {
@@ -4135,10 +4321,10 @@ var hiddenThinkingLabel = (theme) => {
 };
 var renderThinkingMarkdown = (thinking, theme) => piHideThinkingEnabled() ? hiddenThinkingLabel(theme) : new ThinkingMarkdown(thinking, theme);
 var resolveAdvisorRequest = (question) => question?.trim() || undefined;
-var renderAdvisorCallBox = (question, theme) => {
+var renderAdvisorCallBox = (question, theme, followUp = false) => {
   const box = new Box(1, 1, (text) => theme.bg("customMessageBg", text));
   const label = theme.fg("customMessageLabel", theme.bold("[advisor]"));
-  const title = theme.fg("customMessageText", "Executor → Advisor");
+  const title = theme.fg("customMessageText", followUp ? "Executor → Advisor · Follow-up" : "Executor → Advisor");
   box.addChild(new Text(question ? `${label} ${title}
 ${theme.fg("dim", `  ${question}`)}` : `${label} ${title}`, 0, 0));
   return box;
@@ -4323,6 +4509,59 @@ var renderScoutDetails = (box, scout, expanded, theme) => {
 `), 0, 0));
   }
 };
+
+// src/follow-up.ts
+var FOLLOW_UP_TTL_MS = 5 * 60 * 1000;
+var FOLLOW_UP_MAX_DEPTH = 3;
+var FOLLOW_UP_MAX_TOOL_CALLS = 3;
+var copy = (value) => structuredClone(value);
+
+class AdvisorFollowUpCache {
+  #entries = new Map;
+  #now;
+  constructor(now = Date.now) {
+    this.#now = now;
+  }
+  clear() {
+    this.#entries.clear();
+  }
+  advanceToolCall() {
+    const now = this.#now();
+    for (const [adviceId, entry] of this.#entries) {
+      if (now >= entry.expiresAt || entry.toolCallsSince + 1 >= FOLLOW_UP_MAX_TOOL_CALLS) {
+        this.#entries.delete(adviceId);
+        continue;
+      }
+      entry.toolCallsSince += 1;
+    }
+  }
+  capture(adviceId, payload, replacesAdviceId) {
+    if (replacesAdviceId) {
+      this.#entries.delete(replacesAdviceId);
+    }
+    this.#entries.set(adviceId, {
+      ...copy(payload),
+      expiresAt: this.#now() + FOLLOW_UP_TTL_MS,
+      toolCallsSince: 0
+    });
+  }
+  get(adviceId) {
+    const entry = this.#entries.get(adviceId);
+    if (!entry) {
+      return { reason: "the adviceId is unknown or no longer cached" };
+    }
+    if (this.#now() >= entry.expiresAt) {
+      this.#entries.delete(adviceId);
+      return { reason: "the cached payload has expired" };
+    }
+    if (entry.depth >= FOLLOW_UP_MAX_DEPTH) {
+      return {
+        reason: `the follow-up chain is limited to ${FOLLOW_UP_MAX_DEPTH} follow-ups`
+      };
+    }
+    return { payload: copy(entry) };
+  }
+}
 
 // src/jev/ledger.ts
 var freshJevUsage = () => ({
@@ -4545,8 +4784,12 @@ class AdvisorSessionState {
   #consumedCalls = 0;
   #callReservations = new Set;
   #jev = new AdvisorJevLedgerState;
+  #followUps;
   #sessionTurnOrdinal = 0;
   #turnsSinceConsultation = 0;
+  constructor(now) {
+    this.#followUps = new AdvisorFollowUpCache(now);
+  }
   resetTask() {
     this.#repetition = freshRepetition();
     this.#blockedReason = undefined;
@@ -4555,6 +4798,7 @@ class AdvisorSessionState {
     this.#consumedCalls = 0;
     this.#callReservations.clear();
     this.#jev.reset();
+    this.#followUps.clear();
     this.#sessionTurnOrdinal = 0;
     this.#turnsSinceConsultation = 0;
   }
@@ -4618,6 +4862,18 @@ class AdvisorSessionState {
   }
   get consumedCalls() {
     return this.#consumedCalls;
+  }
+  advanceFollowUpToolCall() {
+    this.#followUps.advanceToolCall();
+  }
+  clearFollowUps() {
+    this.#followUps.clear();
+  }
+  followUpFor(adviceId) {
+    return this.#followUps.get(adviceId);
+  }
+  captureFollowUp(adviceId, payload, replacesAdviceId) {
+    this.#followUps.capture(adviceId, payload, replacesAdviceId);
   }
   recordCompletedTurn() {
     this.#sessionTurnOrdinal += 1;
@@ -4777,6 +5033,7 @@ class AdvisorSessionState {
       `Budget: ${budget}`,
       `Usage: ${formatAdvisorUsageTotals(totals)}`,
       `Markdown advice: ${markdown.length} responses (${this.#ledger.draftConsultations} with drafts)`,
+      `Follow-ups: ${markdown.filter((item) => item.followUp).length}`,
       `Outcome reports: ${this.#ledger.outcomes}`,
       `Gate decisions: ${this.#decisionsLine()}`,
       `Loop matching: normalized tool signatures; ${this.#repetition.interventions} gate intervention${this.#repetition.interventions === 1 ? "" : "s"}`,
@@ -4834,7 +5091,7 @@ class CommandRuntime {
     this.advisorSessionState = dependencies.sessionState ?? sessionStateFor(pi);
     this.herdrActivity = dependencies.herdrActivity ?? herdrAdvisorActivity;
     this.scoutStatus = dependencies.statusManager ?? new ScoutStatusManager(false);
-    this.requestAdvisor = dependencies.consult ?? ((ctx, question, signal, onChunk, onScout, gitContext) => consultAdvisor(ctx, question, signal, onChunk, "manual", gitContext, undefined, undefined, undefined, onScout));
+    this.requestAdvisor = dependencies.consult ?? ((ctx, question, signal, onChunk, onScout, gitContext) => consultAdvisor(ctx, question, signal, onChunk, "manual", gitContext, undefined, undefined, undefined, onScout, undefined, undefined, (adviceId, payload, replacesAdviceId) => this.advisorSessionState.captureFollowUp(adviceId, payload, replacesAdviceId)));
   }
   flowEnabled() {
     return this.pi.getActiveTools().includes("ask_advisor");
@@ -4904,6 +5161,7 @@ var prepareActivationModels = async (runtime, ctx, announce, executorOverride, a
   const selection = await selectAdvisorModels(ctx, {
     advisor: advisorOverride || persisted.advisor ? advisorRef : "",
     advisorEffort: advisorEffortRef,
+    advisorFallbackModel: advisorFallbackModelRef,
     executor: executorOverride || plan.pendingExecutor || persisted.executor ? executorRef : "",
     executorEffort: executorEffortRef,
     selectAdvisor: plan.selectAdvisor,
@@ -4913,6 +5171,7 @@ var prepareActivationModels = async (runtime, ctx, announce, executorOverride, a
     return;
   }
   setAdvisorRef(selection.advisor);
+  setAdvisorFallbackModelRef(selection.advisorFallbackModel);
   setAdvisorEffortRef(selection.advisorEffort);
   setExecutorRef(selection.executor);
   setExecutorEffortRef(selection.executorEffort);
@@ -6030,7 +6289,15 @@ var startManualConsultation = async (runtime, ctx, question, controller, scoutSt
   const finishHerdrActivity = runtime.herdrActivity.start();
   let scoutDetails;
   try {
-    const { adviceId, agentRulesBytes, markdown, preferenceBytes, usage } = await runtime.requestAdvisor(ctx, question, controller.signal, (thinking, text) => {
+    const {
+      adviceId,
+      agentRulesBytes,
+      followUp,
+      markdown,
+      model,
+      preferenceBytes,
+      usage
+    } = await runtime.requestAdvisor(ctx, question, controller.signal, (thinking, text) => {
       if (controller.signal.aborted) {
         return;
       }
@@ -6055,8 +6322,9 @@ var startManualConsultation = async (runtime, ctx, question, controller, scoutSt
     runtime.advisorSessionState.recordInvocation({
       cost: advisorUsageCost(usage),
       executionEffect: "continued",
+      followUp,
       kind: "markdown",
-      model: advisorRef,
+      model: model ?? advisorRef,
       trigger: "manual",
       usage
     });
@@ -6065,8 +6333,10 @@ var startManualConsultation = async (runtime, ctx, question, controller, scoutSt
     }
     runtime.updateAdvisorUsageStatus(ctx);
     const details = {
-      advisor: advisorRef,
+      adviceId,
+      advisor: model ?? advisorRef,
       agentRulesBytes,
+      followUp,
       preferenceBytes,
       question,
       text: markdown
@@ -6223,7 +6493,7 @@ var registerModelCommands = (runtime) => {
     handler: (args, ctx) => activateAdvisor(runtime, args, ctx)
   });
   runtime.pi.registerCommand("advisor-models", {
-    description: "Select and persist the Executor and Advisor models with reasoning levels",
+    description: "Select and persist the Executor, Advisor, and optional fallback models with reasoning levels",
     handler: async (_args, ctx) => {
       if (!(loadCommandConfig(ctx) && ctx.hasUI)) {
         return;
@@ -6232,6 +6502,7 @@ var registerModelCommands = (runtime) => {
       const selection = await selectAdvisorModels(ctx, {
         advisor: persisted.advisor ? advisorRef : "",
         advisorEffort: advisorEffortRef,
+        advisorFallbackModel: advisorFallbackModelRef,
         executor: runtime.pendingExecutorModelRef ?? (persisted.executor ? executorRef : ""),
         executorEffort: executorEffortRef,
         selectAdvisor: true,
@@ -6242,6 +6513,7 @@ var registerModelCommands = (runtime) => {
       }
       setExecutorRef(selection.executor);
       setAdvisorRef(selection.advisor);
+      setAdvisorFallbackModelRef(selection.advisorFallbackModel);
       setExecutorEffortRef(selection.executorEffort);
       setAdvisorEffortRef(selection.advisorEffort);
       const path = saveConfig(ctx, {
@@ -7288,6 +7560,25 @@ var jevItems = (settings, theme, tui) => [
     ])
   }
 ];
+var advisorFallbackModelItem = (settings, modelRefs, keybindings, theme, tui) => ({
+  currentValue: settings.fallbackModel ?? FALLBACK_ADVISOR_MODEL_DISABLED,
+  description: "Retry a failed Advisor request once with this optional model; the primary model remains unchanged.",
+  id: "fallbackModel",
+  label: "Fallback Advisor model",
+  submenu: (_currentValue, done) => new SearchableModelSelector({
+    allOptions: [
+      FALLBACK_ADVISOR_MODEL_DISABLED,
+      ...new Set(modelRefs ?? (settings.fallbackModel ? [settings.fallbackModel] : []))
+    ],
+    currentOption: settings.fallbackModel ?? FALLBACK_ADVISOR_MODEL_DISABLED,
+    keybindings: keybindings ?? getKeybindings(),
+    onCancel: done,
+    onSelect: (value) => done(value === FALLBACK_ADVISOR_MODEL_DISABLED ? "" : value),
+    theme,
+    title: "Fallback Advisor model",
+    tui
+  })
+});
 var advisorModelWhitelistItem = (settings, modelRefs, keybindings, theme, tui) => ({
   currentValue: settings.modelWhitelist?.length ? settings.modelWhitelist.join(", ") : "Any model",
   description: "Only the exact provider/model references listed here may call the Advisor; an empty list allows every model.",
@@ -7309,6 +7600,7 @@ var advisorModelWhitelistItem = (settings, modelRefs, keybindings, theme, tui) =
 });
 var createSettingsItems = ({
   effortLevels,
+  fallbackModel,
   modelWhitelist,
   presets,
   settings,
@@ -7336,7 +7628,8 @@ var createSettingsItems = ({
       id: "alwaysOn",
       label: "Always on",
       values: TOGGLE_VALUES
-    }
+    },
+    fallbackModel
   ];
   if (settings.simpleMode) {
     items.push(modelWhitelist, toggle("disableSameModel", "Disable same-model Advisor", "Skip advice when the active Executor and Advisor use the same provider/model; turn off to allow higher-effort same-model reviews.", settings.disableSameModel, true));
@@ -7558,6 +7851,10 @@ var applyCoreMutation = (settings, id, value, presets) => {
       settings.alwaysOn = value === "On";
       return true;
     }
+    case "fallbackModel": {
+      settings.fallbackModel = value === FALLBACK_ADVISOR_MODEL_DISABLED ? undefined : value.trim() || undefined;
+      return true;
+    }
     case "effort": {
       settings.effort = value;
       return true;
@@ -7742,9 +8039,11 @@ class AdvisorSettingsSelector {
       }
       return defaultLabel(text, selected);
     };
+    const fallbackModel = advisorFallbackModelItem(this.settings, this.options.modelRefs, this.options.keybindings, this.options.theme, this.options.tui);
     const modelWhitelist = advisorModelWhitelistItem(this.settings, this.options.modelRefs, this.options.keybindings, this.options.theme, this.options.tui);
     const items = createSettingsItems({
       effortLevels: this.options.effortLevels,
+      fallbackModel,
       modelWhitelist,
       presets: this.presets,
       settings: this.settings,
@@ -7798,6 +8097,7 @@ var applySessionSettings = (settings) => {
   setAdvisorEffortRef(settings.effort === "Default (Model Default)" ? undefined : settings.effort);
   setContextMaxCharsRef(settings.contextMaxChars);
   setAdvisorPlanGateRef(settings.planGate);
+  setAdvisorFallbackModelRef(settings.fallbackModel);
   setAdvisorFailureGateRef(settings.failureGate);
   setAdvisorCompletionGateRef(settings.completionGate);
   setAdvisorDisableSameModelRef(settings.disableSameModel ?? true);
@@ -8188,6 +8488,9 @@ var renderPartialAdvisorResult = (box, result, expanded, theme, context) => {
 var thinkingPreview = (details) => details?.thinking?.trim() ? `${details.thinking.slice(0, 300)}${details.thinking.length > 300 ? "…" : ""}` : "";
 var finalResultLines = (details, advice, theme) => {
   const lines = [renderAdvisorResponseHeader(hasSoundVerdict(advice), theme)];
+  if (details?.followUp) {
+    lines.push(theme.fg("dim", "  Follow-up consultation"));
+  }
   if (details?.advisor) {
     lines.push(theme.fg("dim", `  ${details.advisor}`));
   }
@@ -8255,6 +8558,31 @@ var assertAdvisorModelAccess = (ctx) => {
     throw new Error(accessReason);
   }
 };
+var resolveFollowUp = (params, session) => {
+  if (!params.followUpTo) {
+    return;
+  }
+  if (!params.question?.trim() || params.draft !== undefined || params.gitContext !== undefined || params.includeTrackedFiles?.length || params.includeUntracked?.length) {
+    throw new Error("Follow-up consultations accept only followUpTo and a non-empty question. Issue a fresh consultation for new context or attachments.");
+  }
+  const cached = session.followUpFor(params.followUpTo);
+  if (!cached.payload) {
+    throw new Error(`Follow-up unavailable for adviceId ${params.followUpTo}: ${cached.reason ?? "the cached payload is unavailable"}. Issue a fresh consultation.`);
+  }
+  return { adviceId: params.followUpTo, payload: cached.payload };
+};
+var sameModelNoticeFor = (modelRef) => (modelRef ?? advisorRef) === advisorRef ? sameModelAdvisorNotice : fallbackSameModelAdvisorNotice;
+var skippedSameModelResult = (id, notice, reservedCalls, session) => {
+  session.releaseCall(id);
+  reservedCalls.delete(id);
+  return {
+    content: [{ text: notice, type: "text" }],
+    details: {
+      skipReason: notice,
+      text: notice
+    }
+  };
+};
 var claimTrackedHandoff = (session, includeTrackedFiles) => {
   if (!includeTrackedFiles?.length) {
     return;
@@ -8275,23 +8603,18 @@ var registerAskAdvisorTool = ({
   session
 }) => {
   pi.registerTool({
-    description: "Consult the on-demand Advisor model for strategic guidance. Call with an empty object for a contextual review; attach an optional draft for concrete plan or completion review. If the Advisor explicitly names a missing file, you may make a sequential follow-up call with includeTrackedFiles when enabled and relevant.",
+    description: "Consult the on-demand Advisor model for strategic guidance. Call with an empty object for a contextual review; attach an optional draft for concrete plan or completion review. Use followUpTo with a new question to continue one cached consultation without rebuilding its redacted context. If the Advisor explicitly names a missing file, you may make a sequential fresh consultation with includeTrackedFiles when enabled and relevant.",
     async execute(_id, params, signal, onUpdate, ctx) {
-      const skipSameModel = () => {
-        session.releaseCall(_id);
-        reservedCalls.delete(_id);
-        return {
-          content: [{ text: sameModelAdvisorNotice, type: "text" }],
-          details: {
-            skipReason: sameModelAdvisorNotice,
-            text: sameModelAdvisorNotice
-          }
-        };
-      };
+      let followUp;
       try {
         loadConfig(ctx);
-        if (sameModelAdvisorDisabled(ctx)) {
-          return skipSameModel();
+        followUp = resolveFollowUp(params, session);
+        if (followUp) {
+          assertAdvisorFollowUpPrivacy(followUp.payload, ctx);
+        }
+        const modelRef = followUp?.payload.model;
+        if (sameModelAdvisorDisabled(ctx, ctx.model, modelRef)) {
+          return skippedSameModelResult(_id, sameModelNoticeFor(modelRef), reservedCalls, session);
         }
         assertAdvisorModelAccess(ctx);
       } catch (error) {
@@ -8337,8 +8660,8 @@ var registerAskAdvisorTool = ({
             }
           };
         }
-        if (sameModelAdvisorDisabled(ctx)) {
-          return skipSameModel();
+        if (sameModelAdvisorDisabled(ctx, ctx.model, followUp?.payload.model)) {
+          return skippedSameModelResult(_id, sameModelNoticeFor(followUp?.payload.model), reservedCalls, session);
         }
         if (!simpleMode && !session.canConsult(getAdvisorMaxCallsPerSession(), _id)) {
           throw new Error("Advisor call budget exhausted for this session.");
@@ -8368,7 +8691,8 @@ var registerAskAdvisorTool = ({
           const result = await requestAdvisor(ctx, resolveAdvisorRequest(params.question), signal, (t, tx) => coalescedUpdate.update({
             content: [{ text: tx, type: "text" }],
             details: {
-              advisor: advisorRef,
+              advisor: followUp?.payload.model ?? advisorRef,
+              followUp: Boolean(followUp),
               question: resolveAdvisorRequest(params.question),
               scout: scoutDetails,
               text: tx,
@@ -8379,17 +8703,19 @@ var registerAskAdvisorTool = ({
             coalescedUpdate.update({
               content: [{ text: scoutDetails.text ?? "", type: "text" }],
               details: {
-                advisor: advisorRef,
+                advisor: followUp?.payload.model ?? advisorRef,
+                followUp: Boolean(followUp),
                 question: resolveAdvisorRequest(params.question),
                 scout: scoutDetails
               }
             });
-          }, _id);
+          }, _id, followUp, (adviceId, payload, replacesAdviceId) => session.captureFollowUp(adviceId, payload, replacesAdviceId));
           flushUpdate();
           session.issueAdvice(result.adviceId, result.markdown, result.trigger, Boolean(result.draftBytes), normalizedQuestion);
           session.recordInvocation({
             cost: advisorUsageCost(result.usage),
             executionEffect: "continued",
+            followUp: result.followUp,
             kind: "markdown",
             model: result.model,
             trigger: "executor-requested",
@@ -8403,6 +8729,7 @@ var registerAskAdvisorTool = ({
             advisor: result.model,
             agentRulesBytes: result.agentRulesBytes,
             draftBytes: result.draftBytes,
+            followUp: result.followUp,
             imageBytes: result.imageBytes,
             imageCount: result.imageCount,
             imageOmissions: result.imageOmissions,
@@ -8421,7 +8748,7 @@ var registerAskAdvisorTool = ({
           const response = {
             content: [
               {
-                text: `Advisor (${result.model})
+                text: `${result.followUp ? "Advisor follow-up" : "Advisor"} (${result.model})
 
 ${result.markdown}`,
                 type: "text"
@@ -8440,7 +8767,7 @@ ${result.markdown}`,
             executionEffect: "continued",
             failure: "provider-error",
             kind: "markdown",
-            model: advisorRef,
+            model: followUp?.payload.model ?? advisorRef,
             trigger: "executor-requested"
           });
           updateAdvisorUsageStatus(ctx, session);
@@ -8460,6 +8787,9 @@ ${result.markdown}`,
       draft: Type.Optional(Type.String({
         description: "Concise untrusted draft for plan or completion review; claims are not verification evidence."
       })),
+      followUpTo: Type.Optional(Type.String({
+        description: "Opaque adviceId from a prior successful consultation. Requires a new non-empty question and reuses that consultation's redacted payload; do not combine with draft, Git context, or file attachments."
+      })),
       force: Type.Optional(Type.Boolean({
         description: "Set true only when you judge a decision genuinely material after a consultation was screened out; bypasses screening."
       })),
@@ -8477,11 +8807,11 @@ ${result.markdown}`,
       }))
     }),
     promptGuidelines: [
-      "Call ask_advisor with an empty object for general consultation. For a plan or completion review, include a concise draft naming work, validation, and remaining risks; its claims are not evidence. If the Advisor explicitly says it cannot review a specifically named file, you may make a sequential follow-up call with includeTrackedFiles when the file is relevant, permitted, and worth the shared call budget; do not infer paths or retry automatically."
+      "Call ask_advisor with an empty object for general consultation. For a plan or completion review, include a concise draft naming work, validation, and remaining risks; its claims are not evidence. To drill into an existing answer, pass its adviceId as followUpTo with a new question and no draft, Git context, or attachments. If the Advisor explicitly says it cannot review a specifically named file, you may make a sequential follow-up call with includeTrackedFiles when the file is relevant, permitted, and worth the shared call budget; do not infer paths or retry automatically."
     ],
     promptSnippet: "Consult the Advisor using its existing context; attach a draft for plan or completion review",
     renderCall(args, theme) {
-      return renderAdvisorCallBox(args.question?.trim(), theme);
+      return renderAdvisorCallBox(args.question?.trim(), theme, Boolean(args.followUpTo));
     },
     renderResult(result, options, theme, context) {
       return renderAdvisorResult(result, options, theme, context);
@@ -8678,6 +9008,14 @@ ${guidelines.map((rule) => `- ${rule}`).join(`
 `)}`
     } : undefined;
   });
+  pi.on("input", () => {
+    session.clearFollowUps();
+  });
+  pi.on("tool_result", (event) => {
+    if (event.toolName !== "ask_advisor") {
+      session.advanceFollowUpToolCall();
+    }
+  });
   pi.on("tool_call", (event, ctx) => {
     if (session.blocked) {
       return {
@@ -8717,6 +9055,7 @@ ${guidelines.map((rule) => `- ${rule}`).join(`
   });
   pi.on("session_shutdown", (_event, ctx) => {
     reservedCalls.clear();
+    session.clearFollowUps();
     session.clearCallReservations();
     scoutStatus.clear(ctx);
     herdrBlock.clear();

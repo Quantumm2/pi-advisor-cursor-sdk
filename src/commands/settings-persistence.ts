@@ -11,6 +11,7 @@ import {
   setAdvisorCustomInvocationRef,
   setAdvisorDisableSameModelRef,
   setAdvisorEffortRef,
+  setAdvisorFallbackModelRef,
   setAdvisorFailureGateRef,
   setAdvisorFailureModeRef,
   setAdvisorGitContextMaxCharsRef,
@@ -69,6 +70,7 @@ const applySessionSettings = (settings: AdvisorSettings) => {
   );
   setContextMaxCharsRef(settings.contextMaxChars);
   setAdvisorPlanGateRef(settings.planGate);
+  setAdvisorFallbackModelRef(settings.fallbackModel);
   setAdvisorFailureGateRef(settings.failureGate);
   setAdvisorCompletionGateRef(settings.completionGate);
   setAdvisorDisableSameModelRef(settings.disableSameModel ?? true);

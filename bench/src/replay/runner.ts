@@ -11,8 +11,9 @@ import {
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
+import type { AdvisorFollowUpPayload } from "../../../src/follow-up.ts";
 import { capToolResult } from "../../../src/tool-result-cap.ts";
-import { runAdvisorGate } from "../../../src/tools.ts";
+import { consultAdvisor, runAdvisorGate } from "../../../src/tools.ts";
 import {
   BudgetGuard,
   formatBudgetEstimate,
@@ -186,6 +187,92 @@ const replayContext = (
   } as never;
 };
 
+const runRealFollowUp = async (
+  server: MockProviderServer,
+  fixture: ReplayFixture,
+  cwd: string,
+  timestamp: string
+) => {
+  const model = replayModel(server);
+  server.enqueue(
+    { text: "Initial replay advice", usage: { input: 64, output: 16 } },
+    { text: "Follow-up replay advice", usage: { input: 16, output: 8 } }
+  );
+  const context = replayContext(cwd, fixture, timestamp, model);
+  let capturedPayload:
+    | { adviceId: string; payload: AdvisorFollowUpPayload }
+    | undefined;
+  const first = await consultAdvisor(
+    context,
+    "Review the replay fixture.",
+    undefined,
+    undefined,
+    "executor-requested",
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    (adviceId, payload) => {
+      capturedPayload = { adviceId, payload };
+    }
+  );
+  if (!capturedPayload) {
+    throw new Error("Replay follow-up did not capture the initial payload.");
+  }
+  const second = await consultAdvisor(
+    context,
+    "What edge case did the replay review miss?",
+    undefined,
+    undefined,
+    "executor-requested",
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    { adviceId: capturedPayload.adviceId, payload: capturedPayload.payload }
+  );
+  const captures = server.requests.slice(-2);
+  if (captures.length !== 2) {
+    throw new Error("Replay follow-up did not produce two provider captures.");
+  }
+  const firstMessages = captures[0].body.messages;
+  const secondMessages = captures[1].body.messages;
+  const prefix =
+    Array.isArray(firstMessages) && Array.isArray(secondMessages)
+      ? JSON.stringify(secondMessages.slice(0, firstMessages.length)) ===
+        JSON.stringify(firstMessages)
+      : false;
+  const appended =
+    Array.isArray(secondMessages) &&
+    secondMessages.length ===
+      (Array.isArray(firstMessages) ? firstMessages.length + 1 : -1) &&
+    JSON.stringify(secondMessages.at(-1)).includes("Follow-up focus");
+  return {
+    captures: captures.map(
+      (capture, index) =>
+        ({
+          fixtureId: `${fixture.id}:follow-up:${index}`,
+          leakCount: leaksIn(capture.body).length,
+          leaks: leaksIn(capture.body),
+          normalizedPayloadHash: jsonHash(capture.body),
+          payload: capture.body,
+          payloadBytes: Buffer.byteLength(JSON.stringify(capture.body), "utf8"),
+          response: index === 0 ? first.markdown : second.markdown,
+        }) satisfies ReplayCapture
+    ),
+    passed:
+      prefix &&
+      appended &&
+      first.markdown === "Initial replay advice" &&
+      second.markdown === "Follow-up replay advice",
+  };
+};
+
 /**
  * Runs the shipped gate path while adding one explicit volatile field at the
  * provider boundary. The production request timestamp is not part of the
@@ -343,7 +430,7 @@ export const runReplay = async ({
   if (fixtures.length !== 6) {
     throw new Error(`Replay requires six fixtures, found ${fixtures.length}.`);
   }
-  const plannedRequests = fixtures.length * GATE_FAILURE_MODES.length * 2;
+  const plannedRequests = fixtures.length * GATE_FAILURE_MODES.length * 2 + 2;
   const budgetEstimate = validateBudgetPlan({
     capUsd: effectiveConfig.budgetUsd,
     estimatedUsd: 0,
@@ -377,6 +464,7 @@ export const runReplay = async ({
   let determinismPassed = true;
   let gatePassed = true;
   let contextPassed = true;
+  let followUpPassed = true;
   const cleanupConfig = withReplayConfig("bench-replay/replay-model");
   const replayCwd = process.env.TMPDIR ?? tmpdir();
   try {
@@ -403,6 +491,19 @@ export const runReplay = async ({
         gateResults.push(pair.gate);
       }
     }
+    requestBudget.reserve(0);
+    const followUp = await runRealFollowUp(
+      server,
+      fixtures[0],
+      replayCwd,
+      "follow-up"
+    );
+    captures.push(...followUp.captures);
+    privacyLeaks = [
+      ...privacyLeaks,
+      ...followUp.captures.flatMap((capture) => capture.leaks),
+    ];
+    followUpPassed = followUp.passed;
   } finally {
     cleanupConfig();
     await server.close();
@@ -462,6 +563,7 @@ export const runReplay = async ({
     contextPassed &&
     exhaustedObserved &&
     determinismPassed &&
+    followUpPassed &&
     server.requests.length === plannedRequests &&
     !controlRun.controls.invalid
       ? "PASS"
@@ -493,6 +595,10 @@ export const runReplay = async ({
           pinAssertion: true,
           recordedRequests: server.requests.length,
           volatileFields: ["timestamp"],
+        },
+        followUp: {
+          captures: 2,
+          passed: followUpPassed,
         },
         gateConformance: {
           cases: gateResults,

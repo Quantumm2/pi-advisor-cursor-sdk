@@ -21,7 +21,9 @@ export type ManualConsult = (
   adviceId?: string;
   agentRulesBytes?: number;
   draftBytes?: number;
+  followUp?: boolean;
   markdown: string;
+  model?: string;
   preferenceBytes?: number;
   thinkingText: string;
   usage?: unknown;

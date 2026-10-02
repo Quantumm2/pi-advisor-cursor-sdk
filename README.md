@@ -20,6 +20,8 @@ Keep implementation on a fast model and borrow frontier reasoning only when deci
 - **Configurable review gates** before plans, after repeated failures, and before declaring completion.
 - **Automatic loop detection** for repeated tool calls, with explicit proceed, revise, or blocked decisions.
 - **Separate model and reasoning controls** for the Executor and Advisor, with same-model consultations skipped by default to avoid redundant calls.
+- **Optional Advisor fallback model** that retries provider, auth, and availability failures once without consuming a second consultation budget slot.
+- **Cached Advisor follow-ups** through `followUpTo`, reusing a short-lived, redacted payload prefix for focused questions.
 - **Model whitelist** that can restrict Advisor calls to exact `provider/model` Executor references.
 - **Advisor usage accounting** with per-response token and cost details, normalized usage in Pi's `/cost` totals, and an optional cumulative footer.
 - **Outcome reporting** through `/advisor-stats`, with adoption and validation comparisons over the retained ledger window.
@@ -68,7 +70,7 @@ Reload Pi after installing.
 
 ```text
 /advisor            # Enable the Advisor Flow
-/advisor-models     # Choose the Executor and Advisor models
+/advisor-models     # Choose the Executor, Advisor, and optional fallback models
 /advisor-settings   # Configure behavior, modes, etc.
 /advisor-stats      # Show retained outcome adoption and validation stats
 ```
@@ -89,11 +91,13 @@ Unknown fields in `advisor.json` are preserved for forward compatibility and rep
 
 ## Usage and accounting
 
-Advisor responses show provider-reported input, output, cache, and cost details when available. Successful `ask_advisor` calls also carry normalized usage into Pi's built-in `/cost` totals. Manual consultations and automatic gates keep their own session-local accounting instead, so nothing is double-counted. Missing or partial provider usage is shown as unavailable rather than fabricated as zero. `/advisor-settings` controls both the per-response details and the optional cumulative footer independently.
+Advisor responses show provider-reported input, output, cache, and cost details when available. Successful `ask_advisor` calls also carry normalized usage into Pi's built-in `/cost` totals. Manual consultations and automatic gates keep their own session-local accounting instead, so nothing is double-counted. Missing or partial provider usage is shown as unavailable rather than fabricated as zero. `/advisor-settings` controls both the per-response details and the optional cumulative footer independently. Configure `advisorFallbackModel` or choose **Fallback Advisor model** in the model/settings pickers to retry one failed primary request; the final response is labelled with the model that answered, and both failures are shown together.
+
+A follow-up reuses only the original post-redaction payload in memory. It expires after five minutes, is cleared by a new user turn or three subsequent non-Advisor tool results, and allows at most three chained follow-ups. Use a fresh consultation when it expires or when you need new repository context or attachments.
 
 `/advisor-stats` reads the local outcomes ledger and reports trigger counts, adoption, followed-versus-rejected validation pass rates, distinct pseudonymous advice hashes, and the retained time window. It never fabricates historical cost data; the ledger is capped at 1 MiB and rewritten on overflow.
 
-Successful calls return an opaque `adviceId`. If global outcome logging is enabled, the Executor can call `record_advisor_outcome` once to record whether the advice was adopted and whether final validation passed.
+Successful calls return an opaque `adviceId`. If global outcome logging is enabled, the Executor can call `record_advisor_outcome` once to record whether the advice was adopted and whether final validation passed. A later `ask_advisor` call can pass that ID as `followUpTo` with a new question; the follow-up is counted once against the session budget and shows its responding model and follow-up status.
 
 ## Commands
 
@@ -101,8 +105,8 @@ Successful calls return an opaque `adviceId`. If global outcome logging is enabl
 | --- | --- |
 | `/advisor` | Enable the flow; choose available models when needed. |
 | `/advisor-manual [focus]` | Ask for an immediate second opinion. |
-| `/advisor-models` | Choose the Executor and Advisor models. |
-| `/advisor-settings` | Configure behavior, context, privacy, and limits. |
+| `/advisor-models` | Choose the Executor, Advisor, and optional fallback models. |
+| `/advisor-settings` | Configure behavior, models, context, privacy, and limits. |
 | `/advisor-stats` | Show retained outcome adoption and validation stats. |
 | `/advisor-off` | Disable the flow and persistent activation. |
 

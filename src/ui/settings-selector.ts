@@ -7,6 +7,7 @@ import {
   SIMPLE_MODE_GRADIENT_INTERVAL_MS,
 } from "./settings-formatting.ts";
 import {
+  advisorFallbackModelItem,
   advisorModelWhitelistItem,
   createSettingsItems,
 } from "./settings-items.ts";
@@ -96,6 +97,13 @@ export class AdvisorSettingsSelector implements Component, Focusable {
       }
       return defaultLabel(text, selected);
     };
+    const fallbackModel = advisorFallbackModelItem(
+      this.settings,
+      this.options.modelRefs,
+      this.options.keybindings,
+      this.options.theme,
+      this.options.tui
+    );
     const modelWhitelist = advisorModelWhitelistItem(
       this.settings,
       this.options.modelRefs,
@@ -105,6 +113,7 @@ export class AdvisorSettingsSelector implements Component, Focusable {
     );
     const items = createSettingsItems({
       effortLevels: this.options.effortLevels,
+      fallbackModel,
       modelWhitelist,
       presets: this.presets,
       settings: this.settings,

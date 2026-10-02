@@ -1,4 +1,5 @@
 import { DEFAULT_JEV_MODEL } from "../config/types.ts";
+import { FALLBACK_ADVISOR_MODEL_DISABLED } from "./types.ts";
 import type { AdvisorSettings, ContextPreset } from "./types.ts";
 
 const BOOLEAN_SETTING_FIELDS = [
@@ -53,6 +54,13 @@ const applyCoreMutation = (
     }
     case "alwaysOn": {
       settings.alwaysOn = value === "On";
+      return true;
+    }
+    case "fallbackModel": {
+      settings.fallbackModel =
+        value === FALLBACK_ADVISOR_MODEL_DISABLED
+          ? undefined
+          : value.trim() || undefined;
       return true;
     }
     case "effort": {

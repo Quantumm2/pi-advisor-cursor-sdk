@@ -8,6 +8,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Added
 
+- Added an optional `advisorFallbackModel`, selectable from `/advisor-models` and `/advisor-settings`, that retries a failed primary Advisor request once while attributing the response to the model that answered.
+- Added `followUpTo` support for short-lived, session-local Advisor follow-ups that reuse the original post-redaction payload prefix, enforce depth and conversation-advance limits, and render distinct usage status.
 - Added `/advisor-stats`, a local rendered report for retained outcome triggers, adoption, followed-versus-rejected validation pass rates, distinct pseudonymous advice hashes, and the capped ledger time window.
 - Added default-on, toggleable `AGENTS.md` context for trusted Advisor calls, with origin labels, redaction, byte caps, untrusted-rule framing, and explicit withholding for untrusted projects.
 
@@ -20,6 +22,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Changed
 
+- Fallback retries count as one consultation against the shared Advisor budget; follow-ups count as one consultation each and require a new question without extra attachments or context overrides.
 - Pi 0.87.x and 0.99.x hosts are no longer supported; Pi 1.0.x is now the supported Pi host and the peer range is `^1.0.0`.
 - Updated the development toolchain to the Pi 1.0.0 packages.
 

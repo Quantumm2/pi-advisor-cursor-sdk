@@ -41,17 +41,21 @@ export const advisorModelAccess = (
 
 export const sameModelAdvisorDisabled = (
   ctx: Pick<ExtensionContext, "model">,
-  model: { id: string; provider: string } | undefined = ctx.model
+  model: { id: string; provider: string } | undefined = ctx.model,
+  advisorModelRef: string | undefined = advisorRef
 ): boolean => {
-  if (!(advisorDisableSameModelRef && advisorRef && model)) {
+  const selectedAdvisorRef = advisorModelRef ?? advisorRef;
+  if (!(advisorDisableSameModelRef && selectedAdvisorRef && model)) {
     return false;
   }
-  const [provider, id] = splitRef(advisorRef);
+  const [provider, id] = splitRef(selectedAdvisorRef);
   return provider === model.provider && id === model.id;
 };
 
 export const sameModelAdvisorNotice =
   "Advisor disabled: executor and advisor are the same model.";
+export const fallbackSameModelAdvisorNotice =
+  "Advisor fallback skipped: executor and fallback Advisor are the same model.";
 
 export const advisorModelIsAllowed = (
   ctx: Pick<ExtensionContext, "model">

@@ -162,6 +162,9 @@ const finalResultLines = (
   theme: Theme
 ): string[] => {
   const lines = [renderAdvisorResponseHeader(hasSoundVerdict(advice), theme)];
+  if (details?.followUp) {
+    lines.push(theme.fg("dim", "  Follow-up consultation"));
+  }
   if (details?.advisor) {
     lines.push(theme.fg("dim", `  ${details.advisor}`));
   }

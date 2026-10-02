@@ -21,8 +21,9 @@ describe("Tier 1 replay", () => {
     expect(report.metrics.privacy).toMatchObject({ leakCount: 0 });
     expect(report.metrics.determinism).toMatchObject({
       passed: true,
-      recordedRequests: 36,
+      recordedRequests: 38,
     });
+    expect(report.metrics.followUp).toEqual({ captures: 2, passed: true });
     expect(report.pins.fixtureHashes.replay).toMatch(SHA256);
   });
 });

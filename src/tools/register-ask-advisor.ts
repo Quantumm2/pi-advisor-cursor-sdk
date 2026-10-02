@@ -11,6 +11,7 @@ import {
   isSimpleMode,
 } from "../config/state.ts";
 import { loadConfig } from "../config/storage.ts";
+import type { AdvisorFollowUpPayload } from "../follow-up.ts";
 import { notifyHerdrAdvisorFailure } from "../herdr.ts";
 import {
   ADVISOR_STREAM_UPDATE_INTERVAL_MS,
@@ -21,10 +22,12 @@ import {
   advisorUsageForPi,
   snapshotAdvisorUsage,
 } from "../usage.ts";
+import { assertAdvisorFollowUpPrivacy } from "./consultation.ts";
 import { notifyLocalFailure, updateAdvisorUsageStatus } from "./gate-policy.ts";
 import { normalizeScreeningQuestion, screeningSkipText } from "./jev-filter.ts";
 import {
   advisorModelAccessReason,
+  fallbackSameModelAdvisorNotice,
   sameModelAdvisorDisabled,
   sameModelAdvisorNotice,
 } from "./model-access.ts";
@@ -45,6 +48,65 @@ const assertAdvisorModelAccess = (ctx: ExtensionContext) => {
   if (accessReason) {
     throw new Error(accessReason);
   }
+};
+
+interface AskAdvisorParams {
+  draft?: string;
+  followUpTo?: string;
+  force?: boolean;
+  gitContext?: "none" | "summary" | "full";
+  includeTrackedFiles?: string[];
+  includeUntracked?: string[];
+  question?: string;
+}
+
+const resolveFollowUp = (
+  params: AskAdvisorParams,
+  session: ToolRegistrationContext["session"]
+): { adviceId: string; payload: AdvisorFollowUpPayload } | undefined => {
+  if (!params.followUpTo) {
+    return undefined;
+  }
+  if (
+    !params.question?.trim() ||
+    params.draft !== undefined ||
+    params.gitContext !== undefined ||
+    params.includeTrackedFiles?.length ||
+    params.includeUntracked?.length
+  ) {
+    throw new Error(
+      "Follow-up consultations accept only followUpTo and a non-empty question. Issue a fresh consultation for new context or attachments."
+    );
+  }
+  const cached = session.followUpFor(params.followUpTo);
+  if (!cached.payload) {
+    throw new Error(
+      `Follow-up unavailable for adviceId ${params.followUpTo}: ${cached.reason ?? "the cached payload is unavailable"}. Issue a fresh consultation.`
+    );
+  }
+  return { adviceId: params.followUpTo, payload: cached.payload };
+};
+
+const sameModelNoticeFor = (modelRef: string | undefined) =>
+  (modelRef ?? advisorRef) === advisorRef
+    ? sameModelAdvisorNotice
+    : fallbackSameModelAdvisorNotice;
+
+const skippedSameModelResult = (
+  id: string,
+  notice: string,
+  reservedCalls: Set<string>,
+  session: ToolRegistrationContext["session"]
+) => {
+  session.releaseCall(id);
+  reservedCalls.delete(id);
+  return {
+    content: [{ text: notice, type: "text" as const }],
+    details: {
+      skipReason: notice,
+      text: notice,
+    },
+  };
 };
 
 const claimTrackedHandoff = (
@@ -76,23 +138,25 @@ export const registerAskAdvisorTool = ({
 }: ToolRegistrationContext): void => {
   pi.registerTool({
     description:
-      "Consult the on-demand Advisor model for strategic guidance. Call with an empty object for a contextual review; attach an optional draft for concrete plan or completion review. If the Advisor explicitly names a missing file, you may make a sequential follow-up call with includeTrackedFiles when enabled and relevant.",
+      "Consult the on-demand Advisor model for strategic guidance. Call with an empty object for a contextual review; attach an optional draft for concrete plan or completion review. Use followUpTo with a new question to continue one cached consultation without rebuilding its redacted context. If the Advisor explicitly names a missing file, you may make a sequential fresh consultation with includeTrackedFiles when enabled and relevant.",
     async execute(_id, params, signal, onUpdate, ctx) {
-      const skipSameModel = () => {
-        session.releaseCall(_id);
-        reservedCalls.delete(_id);
-        return {
-          content: [{ text: sameModelAdvisorNotice, type: "text" as const }],
-          details: {
-            skipReason: sameModelAdvisorNotice,
-            text: sameModelAdvisorNotice,
-          },
-        };
-      };
+      let followUp:
+        | { adviceId: string; payload: AdvisorFollowUpPayload }
+        | undefined;
       try {
         loadConfig(ctx);
-        if (sameModelAdvisorDisabled(ctx)) {
-          return skipSameModel();
+        followUp = resolveFollowUp(params, session);
+        if (followUp) {
+          assertAdvisorFollowUpPrivacy(followUp.payload, ctx);
+        }
+        const modelRef = followUp?.payload.model;
+        if (sameModelAdvisorDisabled(ctx, ctx.model, modelRef)) {
+          return skippedSameModelResult(
+            _id,
+            sameModelNoticeFor(modelRef),
+            reservedCalls,
+            session
+          );
         }
         assertAdvisorModelAccess(ctx);
       } catch (error) {
@@ -148,8 +212,13 @@ export const registerAskAdvisorTool = ({
             },
           };
         }
-        if (sameModelAdvisorDisabled(ctx)) {
-          return skipSameModel();
+        if (sameModelAdvisorDisabled(ctx, ctx.model, followUp?.payload.model)) {
+          return skippedSameModelResult(
+            _id,
+            sameModelNoticeFor(followUp?.payload.model),
+            reservedCalls,
+            session
+          );
         }
         if (
           !simpleMode &&
@@ -191,7 +260,8 @@ export const registerAskAdvisorTool = ({
               coalescedUpdate.update({
                 content: [{ text: tx, type: "text" }],
                 details: {
-                  advisor: advisorRef,
+                  advisor: followUp?.payload.model ?? advisorRef,
+                  followUp: Boolean(followUp),
                   question: resolveAdvisorRequest(params.question),
                   scout: scoutDetails,
                   text: tx,
@@ -209,13 +279,17 @@ export const registerAskAdvisorTool = ({
               coalescedUpdate.update({
                 content: [{ text: scoutDetails.text ?? "", type: "text" }],
                 details: {
-                  advisor: advisorRef,
+                  advisor: followUp?.payload.model ?? advisorRef,
+                  followUp: Boolean(followUp),
                   question: resolveAdvisorRequest(params.question),
                   scout: scoutDetails,
                 },
               });
             },
-            _id
+            _id,
+            followUp,
+            (adviceId, payload, replacesAdviceId) =>
+              session.captureFollowUp(adviceId, payload, replacesAdviceId)
           );
           flushUpdate();
           session.issueAdvice(
@@ -228,6 +302,7 @@ export const registerAskAdvisorTool = ({
           session.recordInvocation({
             cost: advisorUsageCost(result.usage),
             executionEffect: "continued",
+            followUp: result.followUp,
             kind: "markdown",
             model: result.model,
             trigger: "executor-requested",
@@ -241,6 +316,7 @@ export const registerAskAdvisorTool = ({
             advisor: result.model,
             agentRulesBytes: result.agentRulesBytes,
             draftBytes: result.draftBytes,
+            followUp: result.followUp,
             imageBytes: result.imageBytes,
             imageCount: result.imageCount,
             imageOmissions: result.imageOmissions,
@@ -259,7 +335,7 @@ export const registerAskAdvisorTool = ({
           const response: AgentToolResult<AdvisorToolDetails> = {
             content: [
               {
-                text: `Advisor (${result.model})\n\n${result.markdown}`,
+                text: `${result.followUp ? "Advisor follow-up" : "Advisor"} (${result.model})\n\n${result.markdown}`,
                 type: "text",
               },
             ],
@@ -280,7 +356,7 @@ export const registerAskAdvisorTool = ({
             executionEffect: "continued",
             failure: "provider-error",
             kind: "markdown",
-            model: advisorRef,
+            model: followUp?.payload.model ?? advisorRef,
             trigger: "executor-requested",
           });
           updateAdvisorUsageStatus(ctx, session);
@@ -301,6 +377,12 @@ export const registerAskAdvisorTool = ({
         Type.String({
           description:
             "Concise untrusted draft for plan or completion review; claims are not verification evidence.",
+        })
+      ),
+      followUpTo: Type.Optional(
+        Type.String({
+          description:
+            "Opaque adviceId from a prior successful consultation. Requires a new non-empty question and reuses that consultation's redacted payload; do not combine with draft, Git context, or file attachments.",
         })
       ),
       force: Type.Optional(
@@ -342,12 +424,16 @@ export const registerAskAdvisorTool = ({
       ),
     }),
     promptGuidelines: [
-      "Call ask_advisor with an empty object for general consultation. For a plan or completion review, include a concise draft naming work, validation, and remaining risks; its claims are not evidence. If the Advisor explicitly says it cannot review a specifically named file, you may make a sequential follow-up call with includeTrackedFiles when the file is relevant, permitted, and worth the shared call budget; do not infer paths or retry automatically.",
+      "Call ask_advisor with an empty object for general consultation. For a plan or completion review, include a concise draft naming work, validation, and remaining risks; its claims are not evidence. To drill into an existing answer, pass its adviceId as followUpTo with a new question and no draft, Git context, or attachments. If the Advisor explicitly says it cannot review a specifically named file, you may make a sequential follow-up call with includeTrackedFiles when the file is relevant, permitted, and worth the shared call budget; do not infer paths or retry automatically.",
     ],
     promptSnippet:
       "Consult the Advisor using its existing context; attach a draft for plan or completion review",
     renderCall(args, theme) {
-      return renderAdvisorCallBox(args.question?.trim(), theme);
+      return renderAdvisorCallBox(
+        args.question?.trim(),
+        theme,
+        Boolean(args.followUpTo)
+      );
     },
     renderResult(result, options, theme, context) {
       // SAFETY: this tool's execute() only returns AdvisorToolDetails-shaped details.

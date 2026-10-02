@@ -1,6 +1,7 @@
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 
 import { SearchableModelSelector } from "../ui/model-selector.ts";
+import { FALLBACK_ADVISOR_MODEL_DISABLED } from "../ui/types.ts";
 import {
   effortChoices,
   getAvailableModelRefs,
@@ -10,6 +11,7 @@ import {
 export interface AdvisorModelSelection {
   advisor: string;
   advisorEffort: string | undefined;
+  advisorFallbackModel: string | undefined;
   executor: string;
   executorEffort: string | undefined;
 }
@@ -17,6 +19,7 @@ export interface AdvisorModelSelection {
 export interface AdvisorModelPickerOptions {
   advisor: string | undefined;
   advisorEffort: string | undefined;
+  advisorFallbackModel: string | undefined;
   executor: string | undefined;
   executorEffort: string | undefined;
   selectAdvisor: boolean;
@@ -46,7 +49,13 @@ export const selectAdvisorModels = async (
         )
     ),
   ];
-  let { advisor, advisorEffort, executor, executorEffort } = options;
+  let {
+    advisor,
+    advisorEffort,
+    advisorFallbackModel,
+    executor,
+    executorEffort,
+  } = options;
 
   if (options.selectExecutor) {
     const selectedExecutor = await ctx.ui.custom<string | undefined>(
@@ -104,8 +113,41 @@ export const selectAdvisorModels = async (
     advisorEffort = selectedEffort(selectedAdvisorEffort);
   }
 
+  const selectedFallback = await ctx.ui.custom<string | undefined>(
+    (tui, theme, keybindings, done) =>
+      new SearchableModelSelector({
+        allOptions: [
+          FALLBACK_ADVISOR_MODEL_DISABLED,
+          ...new Set([
+            ...allOptions,
+            ...(refs || !advisorFallbackModel ? [] : [advisorFallbackModel]),
+          ]),
+        ],
+        currentOption: advisorFallbackModel ?? FALLBACK_ADVISOR_MODEL_DISABLED,
+        keybindings,
+        onCancel: () => done(undefined),
+        onSelect: done,
+        theme,
+        title: "Select Fallback Advisor Model (optional)",
+        tui,
+      })
+  );
+  if (selectedFallback === undefined) {
+    return undefined;
+  }
+  advisorFallbackModel =
+    selectedFallback === FALLBACK_ADVISOR_MODEL_DISABLED
+      ? undefined
+      : selectedFallback;
+
   if (!(advisor && executor)) {
     return undefined;
   }
-  return { advisor, advisorEffort, executor, executorEffort };
+  return {
+    advisor,
+    advisorEffort,
+    advisorFallbackModel,
+    executor,
+    executorEffort,
+  };
 };

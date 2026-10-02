@@ -10,6 +10,7 @@ import {
   advisorCustomInvocationRef,
   advisorDisableSameModelRef,
   advisorEffortRef,
+  advisorFallbackModelRef,
   advisorFailureGateRef,
   advisorFailureModeRef,
   advisorGitContextMaxCharsRef,
@@ -225,6 +226,12 @@ export const CONFIG_SCHEMA = {
     current: () => advisorFailureGateRef,
     persisted: true,
     type: "boolean",
+  },
+  advisorFallbackModel: {
+    accepted: "a provider/model string",
+    current: () => configuredModelRef(advisorFallbackModelRef),
+    persisted: true,
+    type: "string",
   },
   advisorGitContext: {
     accepted: GIT_CONTEXT_LEVELS.join(", "),

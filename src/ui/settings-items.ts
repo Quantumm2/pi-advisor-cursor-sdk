@@ -17,6 +17,7 @@ import {
 import { isValidAdvisorToolPolicies } from "../config/validation.ts";
 import { JevSetupSubmenu } from "./jev-setup-submenu.ts";
 import { SearchableModelMultiSelector } from "./model-multi-selector.ts";
+import { SearchableModelSelector } from "./model-selector.ts";
 import {
   contextDescription,
   currentContextLabel,
@@ -28,6 +29,7 @@ import {
   withCurrentValue,
 } from "./settings-formatting.ts";
 import { TextSettingSubmenu } from "./text-setting-submenu.ts";
+import { FALLBACK_ADVISOR_MODEL_DISABLED } from "./types.ts";
 import type {
   AdvisorSettings,
   ContextPreset,
@@ -36,6 +38,7 @@ import type {
 
 export interface SettingsItemsOptions {
   effortLevels: string[];
+  fallbackModel: SettingItem;
   modelWhitelist: SettingItem;
   presets: ContextPreset[];
   settings: AdvisorSettings;
@@ -220,6 +223,37 @@ const jevItems = (
   },
 ];
 
+export const advisorFallbackModelItem = (
+  settings: AdvisorSettings,
+  modelRefs: string[] | undefined,
+  keybindings: KeybindingsManager | undefined,
+  theme: Theme,
+  tui: RenderRequester
+): SettingItem => ({
+  currentValue: settings.fallbackModel ?? FALLBACK_ADVISOR_MODEL_DISABLED,
+  description:
+    "Retry a failed Advisor request once with this optional model; the primary model remains unchanged.",
+  id: "fallbackModel",
+  label: "Fallback Advisor model",
+  submenu: (_currentValue, done) =>
+    new SearchableModelSelector({
+      allOptions: [
+        FALLBACK_ADVISOR_MODEL_DISABLED,
+        ...new Set(
+          modelRefs ?? (settings.fallbackModel ? [settings.fallbackModel] : [])
+        ),
+      ],
+      currentOption: settings.fallbackModel ?? FALLBACK_ADVISOR_MODEL_DISABLED,
+      keybindings: keybindings ?? getKeybindings(),
+      onCancel: done,
+      onSelect: (value) =>
+        done(value === FALLBACK_ADVISOR_MODEL_DISABLED ? "" : value),
+      theme,
+      title: "Fallback Advisor model",
+      tui,
+    }),
+});
+
 export const advisorModelWhitelistItem = (
   settings: AdvisorSettings,
   modelRefs: string[] | undefined,
@@ -252,6 +286,7 @@ export const advisorModelWhitelistItem = (
 
 export const createSettingsItems = ({
   effortLevels,
+  fallbackModel,
   modelWhitelist,
   presets,
   settings,
@@ -282,6 +317,7 @@ export const createSettingsItems = ({
       label: "Always on",
       values: TOGGLE_VALUES,
     },
+    fallbackModel,
   ];
   if (settings.simpleMode) {
     items.push(

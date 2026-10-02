@@ -30,6 +30,7 @@ import {
   setAdvisorPlanGateRef,
   setAdvisorRedactSecretsRef,
   setAdvisorRef,
+  setAdvisorFallbackModelRef,
   setAdvisorScoutEnabledRef,
   setAdvisorScoutTimeoutMsRef,
   setAdvisorSessionSummaryRef,
@@ -69,6 +70,7 @@ import {
 export const resetDefaults = () => {
   setExecutorRef("");
   setAdvisorRef("");
+  setAdvisorFallbackModelRef(undefined);
   setAdvisorAgentsMdContextRef(true);
   setPersistedModelRefs(undefined, undefined);
   setExecutorEffortRef(undefined);
@@ -139,6 +141,10 @@ const applyNonEmptyStringConfig = (
 export const applyConfig = (config: AdvisorConfig) => {
   applyNonEmptyStringConfig(config.executor, setExecutorRef);
   applyNonEmptyStringConfig(config.advisor, setAdvisorRef);
+  applyNonEmptyStringConfig(
+    config.advisorFallbackModel,
+    setAdvisorFallbackModelRef
+  );
   applyNonEmptyStringConfig(config.executorEffort, setExecutorEffortRef);
   applyNonEmptyStringConfig(config.advisorEffort, setAdvisorEffortRef);
   applyOptionalConfig(
