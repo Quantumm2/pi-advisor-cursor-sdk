@@ -33,9 +33,13 @@ Redaction and output limits reduce accidental disclosure; they are not a data-cl
   - `exclude` omits both call details and output.
 - Tools not listed in `advisorToolPolicies`, including custom and newly added tools, use `full` for backward compatibility.
 
-## Project preferences
+## Project rules and preferences
 
-In a trusted project, `.pi/advisor-preferences.md` may provide a short local brief. It is never written by pi-advisor, is treated as lower-priority untrusted text, and is redacted and capped before egress. Symlinks, unreadable files, and paths outside the project are ignored.
+`advisorAgentsMdContext` defaults to `true`. In a trusted project, the project-root `AGENTS.md` and global `~/.pi/agent/AGENTS.md` may be sent with each Advisor call. The files are read through the same trusted-reader protections as project preferences: no symlinks, realpath containment, redaction, an 8 KiB per-source cap, and a combined 16 KiB rules cap. They are origin-labelled inside a separate `<project_rules>` block and framed as untrusted review guidance, not executable instructions.
+
+An untrusted project withholds both files and tells the Advisor that rules were withheld. The global file is never sent for an untrusted project. Disable `advisorAgentsMdContext` to prevent either file from being read or sent.
+
+In a trusted project, `.pi/advisor-preferences.md` may provide a short local brief. It is never written by pi-advisor, remains separate from `AGENTS.md`, is treated as lower-priority untrusted text, and is redacted and capped before egress. Symlinks, unreadable files, and paths outside the project are ignored. The explicit preferences brief is more specific than general `AGENTS.md` conventions, but neither source overrides the Advisor system instructions.
 
 ## Experimental Advisor Scout
 
@@ -52,6 +56,8 @@ The Scout call creates separate provider usage and cost. Its metrics are local a
 ## Outcome logging
 
 `advisorOutcomeLogging` defaults to `false` and is global-only: a project config cannot enable it.
+
+`/advisor-stats` reads the local ledger only. It reports counts and rates from retained records, including the first and last timestamps and distinct pseudonymous advice hashes; it does not reconstruct advice or fabricate historical usage/cost. The ledger is capped at 1 MiB and rewritten on overflow, so the report covers only the retained window. Truncated or malformed lines are ignored.
 
 When enabled, `~/.pi/agent/advisor-outcomes.jsonl` stores bounded, rotating JSONL records containing only a version, timestamp, salted truncated advice digest, trigger, adoption, and validation status. It stores no prompt, advice, paths, tool output, repository data, session ID, or advice ID.
 

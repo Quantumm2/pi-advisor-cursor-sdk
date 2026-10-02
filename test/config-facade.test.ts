@@ -12,6 +12,7 @@ import { join } from "node:path";
 import { CONFIG_DIR_NAME } from "@earendil-works/pi-coding-agent";
 
 import {
+  advisorAgentsMdContextRef,
   advisorFailureModeRef,
   advisorHerdrIntegrationRef,
   advisorModelWhitelistRef,
@@ -36,6 +37,7 @@ import {
   parseArgs,
   resetConfigCache,
   saveConfig,
+  setAdvisorAgentsMdContextRef,
   setAdvisorAutoLoopGateRef,
   setAdvisorBlockOnBlockedRef,
   setAdvisorCollapseResponsesRef,
@@ -136,6 +138,7 @@ describe("Config Module", () => {
       loadConfig(
         asExtensionContext({ cwd: tmpdir(), isProjectTrusted: () => false })
       );
+      expect(advisorAgentsMdContextRef).toBe(true);
       expect(advisorFailureModeRef).toBe("block-session");
       expect(simpleModeRef).toBe(false);
       expect(alwaysOnRef).toBe(false);
@@ -145,6 +148,7 @@ describe("Config Module", () => {
       expect(showUsageDetailsRef).toBe(true);
       expect(showUsageFooterRef).toBe(false);
       expect(advisorHerdrIntegrationRef).toBe(true);
+      expect(validateConfig({ advisorAgentsMdContext: false })).toBe(true);
       expect(validateConfig({ advisorScoutEnabled: true })).toBe(true);
       expect(
         validateConfig({ advisorModelWhitelist: ["provider/model"] })
@@ -156,6 +160,9 @@ describe("Config Module", () => {
       );
       expect(() => validateConfig({ showUsageFooter: "yes" })).toThrow(
         INVALID_SHOW_USAGE_FOOTER_PATTERN
+      );
+      expect(() => validateConfig({ advisorAgentsMdContext: "yes" })).toThrow(
+        /advisorAgentsMdContext/u
       );
       expect(() => validateConfig({ advisorScoutEnabled: "yes" })).toThrow(
         INVALID_SCOUT_ENABLED_PATTERN
@@ -329,6 +336,7 @@ describe("Config Module", () => {
       setAdvisorModelWhitelistRef(["provider/allowed", "provider/allowed"]);
       setAdvisorSessionSummaryRef(false);
       setAdvisorScoutEnabledRef(true);
+      setAdvisorAgentsMdContextRef(false);
       setShowUsageDetailsRef(false);
       setShowUsageFooterRef(true);
       setSimpleModeRef(true);
@@ -344,6 +352,7 @@ describe("Config Module", () => {
         asExtensionContext({ cwd, isProjectTrusted: () => false })
       );
       expect(JSON.parse(readFileSync(path, "utf-8"))).toMatchObject({
+        advisorAgentsMdContext: false,
         advisorAutoLoopGate: false,
         advisorBlockOnBlocked: false,
         advisorCollapseResponses: true,

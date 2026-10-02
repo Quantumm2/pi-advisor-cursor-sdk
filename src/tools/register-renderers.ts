@@ -20,29 +20,63 @@ interface CallMessageDetails {
 
 interface TurnGateResultDetails {
   advisor?: string;
+  agentRulesBytes?: number;
   text?: string;
   usage?: unknown;
 }
 
 interface LoopResultDetails {
   advisor?: string;
+  agentRulesBytes?: number;
   decision?: GateDecision;
   text?: string;
   usage?: unknown;
 }
+
+const formatByteSize = (bytes: number) => {
+  if (bytes >= 1024 ** 3) {
+    return `${(bytes / 1024 ** 3).toFixed(1)} GiB`;
+  }
+  if (bytes >= 1024 ** 2) {
+    return `${(bytes / 1024 ** 2).toFixed(1)} MiB`;
+  }
+  if (bytes >= 1024) {
+    return `${Math.round(bytes / 1024)} KiB`;
+  }
+  return `${bytes} B`;
+};
+
+const addAttachmentLine = (
+  box: Box,
+  details: TurnGateResultDetails | LoopResultDetails | undefined,
+  theme: Theme
+) => {
+  if (details?.agentRulesBytes) {
+    box.addChild(
+      new Text(
+        theme.fg(
+          "dim",
+          `  AGENTS.md rules attached · ${formatByteSize(details.agentRulesBytes)}`
+        ),
+        0,
+        0
+      )
+    );
+  }
+};
 
 const addUsageLine = (
   box: Box,
   details: TurnGateResultDetails | LoopResultDetails | undefined,
   theme: Theme
 ) => {
-  if (!getAdvisorSettings().showUsageDetails) {
-    return;
+  if (getAdvisorSettings().showUsageDetails) {
+    const usageText = formatAdvisorUsage(details?.usage);
+    if (usageText) {
+      box.addChild(new Text(theme.fg("dim", `  Usage: ${usageText}`), 0, 0));
+    }
   }
-  const usageText = formatAdvisorUsage(details?.usage);
-  if (usageText) {
-    box.addChild(new Text(theme.fg("dim", `  Usage: ${usageText}`), 0, 0));
-  }
+  addAttachmentLine(box, details, theme);
 };
 
 const callQuestionRenderer: MessageRenderer<CallMessageDetails> = (

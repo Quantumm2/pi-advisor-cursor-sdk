@@ -25,6 +25,7 @@ import type {
 // An empty ref means no model has been selected yet.
 export let executorRef = "";
 export let advisorRef = "";
+export let advisorAgentsMdContextRef = true;
 let persistedExecutorRef: string | undefined;
 let persistedAdvisorRef: string | undefined;
 export let executorEffortRef: string | undefined;
@@ -79,6 +80,9 @@ export const setExecutorRef = (ref: string) => {
 };
 export const setAdvisorRef = (ref: string) => {
   advisorRef = ref;
+};
+export const setAdvisorAgentsMdContextRef = (enabled: boolean) => {
+  advisorAgentsMdContextRef = enabled;
 };
 /** Returns model refs explicitly persisted in the global Advisor config. */
 export const getPersistedModelRefs = () => ({
@@ -234,6 +238,7 @@ export const setShowUsageFooterRef = (enabled: boolean) => {
  * imported mutable bindings, which can be snapshotted by extension loaders.
  */
 export const getAdvisorSettings = () => ({
+  agentsMdContext: advisorAgentsMdContextRef,
   alwaysOn: alwaysOnRef,
   autoLoopGate: advisorAutoLoopGateRef,
   blockOnBlocked: advisorBlockOnBlockedRef,

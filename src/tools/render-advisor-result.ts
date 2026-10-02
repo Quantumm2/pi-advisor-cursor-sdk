@@ -60,6 +60,9 @@ const formatByteSize = (bytes: number): string => {
 
 const attachmentLabels = (details: AdvisorToolDetails | undefined) =>
   [
+    details?.agentRulesBytes
+      ? `AGENTS.md rules attached · ${formatByteSize(details.agentRulesBytes)}`
+      : undefined,
     details?.draftBytes
       ? `Draft attached · ${formatByteSize(details.draftBytes)}`
       : undefined,

@@ -22,7 +22,8 @@ Keep implementation on a fast model and borrow frontier reasoning only when deci
 - **Separate model and reasoning controls** for the Executor and Advisor, with same-model consultations skipped by default to avoid redundant calls.
 - **Model whitelist** that can restrict Advisor calls to exact `provider/model` Executor references.
 - **Advisor usage accounting** with per-response token and cost details, normalized usage in Pi's `/cost` totals, and an optional cumulative footer.
-- **Privacy controls** for conversation history, repository context, explicit file and image handoff, tool results, secret redaction, and outcome logging.
+- **Outcome reporting** through `/advisor-stats`, with adoption and validation comparisons over the retained ledger window.
+- **Privacy controls** for conversation history, repository context, trusted `AGENTS.md` rules, explicit file and image handoff, tool results, secret redaction, and outcome logging.
 - **Visual Advisor reviews** for supported PNG, JPEG, GIF, and WebP images in selected conversation or tool results when the Advisor model accepts images.
 - **Optional persistent activation, Simple mode, session summaries, and Herdr integration.**
 - **Compact searchable `/advisor-settings`** that matches Pi's settings list and saves changes immediately.
@@ -69,6 +70,7 @@ Reload Pi after installing.
 /advisor            # Enable the Advisor Flow
 /advisor-models     # Choose the Executor and Advisor models
 /advisor-settings   # Configure behavior, modes, etc.
+/advisor-stats      # Show retained outcome adoption and validation stats
 ```
 
 On first use, or whenever a saved model is unavailable, `/advisor` opens the same available-model picker as `/advisor-models`; it never silently chooses an unconfigured model. If the active Executor and Advisor use the same provider/model, calls and automatic gates are skipped with a notice; switching either model resumes consultations. Turn off **Disable same-model Advisor** in `/advisor-settings` (or set `"advisorDisableSameModel": false` globally) if you intentionally want a higher-effort review from that same model. You can also enable the flow and select both models at once:
@@ -89,6 +91,8 @@ Unknown fields in `advisor.json` are preserved for forward compatibility and rep
 
 Advisor responses show provider-reported input, output, cache, and cost details when available. Successful `ask_advisor` calls also carry normalized usage into Pi's built-in `/cost` totals. Manual consultations and automatic gates keep their own session-local accounting instead, so nothing is double-counted. Missing or partial provider usage is shown as unavailable rather than fabricated as zero. `/advisor-settings` controls both the per-response details and the optional cumulative footer independently.
 
+`/advisor-stats` reads the local outcomes ledger and reports trigger counts, adoption, followed-versus-rejected validation pass rates, distinct pseudonymous advice hashes, and the retained time window. It never fabricates historical cost data; the ledger is capped at 1 MiB and rewritten on overflow.
+
 Successful calls return an opaque `adviceId`. If global outcome logging is enabled, the Executor can call `record_advisor_outcome` once to record whether the advice was adopted and whether final validation passed.
 
 ## Commands
@@ -99,6 +103,7 @@ Successful calls return an opaque `adviceId`. If global outcome logging is enabl
 | `/advisor-manual [focus]` | Ask for an immediate second opinion. |
 | `/advisor-models` | Choose the Executor and Advisor models. |
 | `/advisor-settings` | Configure behavior, context, privacy, and limits. |
+| `/advisor-stats` | Show retained outcome adoption and validation stats. |
 | `/advisor-off` | Disable the flow and persistent activation. |
 
 In the interactive TUI, `/advisor-manual [focus]` opens a centered overlay with the focus text prefilled, a choice of permitted Git-context level, and live progress in the transcript. Canceling has no side effects.
@@ -109,7 +114,7 @@ Advisor Scout is off by default. When enabled in `/advisor-settings` or via `"ad
 
 ## Privacy
 
-Advisor requests can include user messages, tool calls, tool results, targeted questions, and repository information. Repository context is configurable from no access through changed-file summaries to a capped patch; when it is disabled, the Advisor is told so rather than shown an apparently clean tree. Images from disclosed conversation and full-policy tool results can be sent as pixels only to image-capable Advisor models; Scout sees markers, not pixels. Exact tracked and untracked image files can be attached using `includeTrackedFiles` and `includeUntracked` under their existing separate global consent rules. Images are limited to four and 8 MiB total, with a 4 MiB per-image cap; unsupported, missing, or oversized images are reported as withheld, not reviewed. Explicit tracked and untracked file contents require separate global opt-ins and are sent as untrusted data. Secret redaction is off by default; when enabled, credential-shaped values in targeted questions are redacted before the provider request. Tools without an explicit policy use full context. Settings are global, so a project cannot silently change them.
+Advisor requests can include user messages, tool calls, tool results, targeted questions, trusted project and global `AGENTS.md` rules, and repository information. `advisorAgentsMdContext` is on by default and can be disabled in `/advisor-settings`; rules are sent as origin-labelled, capped, redacted, untrusted review guidance only. Untrusted projects withhold both rule files and tell the Advisor that rules were withheld. Repository context is configurable from no access through changed-file summaries to a capped patch; when it is disabled, the Advisor is told so rather than shown an apparently clean tree. Images from disclosed conversation and full-policy tool results can be sent as pixels only to image-capable Advisor models; Scout sees markers, not pixels. Exact tracked and untracked image files can be attached using `includeTrackedFiles` and `includeUntracked` under their existing separate global consent rules. Images are limited to four and 8 MiB total, with a 4 MiB per-image cap; unsupported, missing, or oversized images are reported as withheld, not reviewed. Explicit tracked and untracked file contents require separate global opt-ins and are sent as untrusted data. Secret redaction is off by default; when enabled, credential-shaped values in targeted questions are redacted before the provider request. Tools without an explicit policy use full context. Settings are global, so a project cannot silently change them.
 
 When Scout is enabled, the Executor model provider also receives bounded Advisor-eligible conversation history. Read [Privacy and data handling](https://github.com/philipbrembeck/pi-advisor/blob/main/docs/privacy.md) before using pi-advisor with sensitive work.
 

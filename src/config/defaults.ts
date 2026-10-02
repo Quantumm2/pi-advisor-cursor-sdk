@@ -1,4 +1,5 @@
 import {
+  setAdvisorAgentsMdContextRef,
   setAdvisorAutoLoopGateRef,
   setAdvisorBlockOnBlockedRef,
   setAdvisorCollapseResponsesRef,
@@ -68,6 +69,7 @@ import {
 export const resetDefaults = () => {
   setExecutorRef("");
   setAdvisorRef("");
+  setAdvisorAgentsMdContextRef(true);
   setPersistedModelRefs(undefined, undefined);
   setExecutorEffortRef(undefined);
   setAdvisorEffortRef(undefined);
@@ -139,6 +141,11 @@ export const applyConfig = (config: AdvisorConfig) => {
   applyNonEmptyStringConfig(config.advisor, setAdvisorRef);
   applyNonEmptyStringConfig(config.executorEffort, setExecutorEffortRef);
   applyNonEmptyStringConfig(config.advisorEffort, setAdvisorEffortRef);
+  applyOptionalConfig(
+    config,
+    "advisorAgentsMdContext",
+    setAdvisorAgentsMdContextRef
+  );
   applyOptionalConfig(config, "contextMaxChars", setContextMaxCharsRef);
   applyOptionalConfig(config, "advisorPlanGate", setAdvisorPlanGateRef);
   applyOptionalConfig(config, "advisorFailureGate", setAdvisorFailureGateRef);

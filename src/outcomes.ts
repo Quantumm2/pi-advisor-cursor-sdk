@@ -17,7 +17,7 @@ import { getAgentDir } from "@earendil-works/pi-coding-agent";
 
 export type OutcomeAdoption = "followed" | "not-followed" | "unknown";
 export type OutcomeValidation = "passed" | "failed" | "not-run" | "unknown";
-type OutcomeTrigger =
+export type OutcomeTrigger =
   | "manual"
   | "executor-requested"
   | "turn-gate"
@@ -33,6 +33,12 @@ export const VALIDATIONS: OutcomeValidation[] = [
   "not-run",
   "unknown",
 ];
+export const OUTCOME_TRIGGERS: OutcomeTrigger[] = [
+  "manual",
+  "executor-requested",
+  "turn-gate",
+  "repeated-tool-call",
+];
 export interface OutcomeRecord {
   adoption: OutcomeAdoption;
   adviceHash: string;
@@ -42,6 +48,7 @@ export interface OutcomeRecord {
   validationStatus: OutcomeValidation;
 }
 const MAX_LOG_BYTES = 1024 * 1024;
+export const OUTCOME_LOG_MAX_BYTES = MAX_LOG_BYTES;
 const statePath = () => join(getAgentDir(), "advisor-outcomes-salt");
 export const outcomeLogPath = () =>
   join(getAgentDir(), "advisor-outcomes.jsonl");

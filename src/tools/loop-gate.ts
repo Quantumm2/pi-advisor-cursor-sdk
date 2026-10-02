@@ -50,6 +50,7 @@ const sendAutomaticGateCall = (pi: ExtensionAPI, event: ToolCallEvent) => {
 
 interface LoopResultDetails {
   advisor?: string;
+  agentRulesBytes?: number;
   decision?: GateDecision;
   text: string;
   usage?: AdvisorUsageSnapshot;
@@ -81,6 +82,7 @@ const sendAutomaticGateResult = (
 ) => {
   const details: LoopResultDetails = {
     advisor: result.model,
+    agentRulesBytes: result.agentRulesBytes,
     decision: result.decision,
     text: result.markdown,
   };

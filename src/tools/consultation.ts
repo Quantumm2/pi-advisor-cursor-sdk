@@ -16,6 +16,7 @@ import { redactSecrets } from "../redaction.ts";
 import type { ScoutLifecycleEvent } from "../scout.ts";
 import type { ConsultationTrigger, GateTrigger } from "../session-state.ts";
 import { assembleConsultationContext } from "./consult-context.ts";
+import type { ConsultationContext } from "./consult-context.ts";
 import { parseAutomaticDecision } from "./gate-protocol.ts";
 import {
   advisorModelAccessReason,
@@ -57,6 +58,34 @@ interface CollectAdvisorResponseOptions {
 const fileTag = (item: { path: string; text: string }) =>
   `<file path=${JSON.stringify(item.path)}>\n${item.text}\n</file>`;
 
+const advisorProjectRules = (rules: ConsultationContext["projectRules"]) =>
+  rules
+    ? {
+        global: rules.global?.text,
+        note:
+          rules.withheldReason === "untrusted"
+            ? "Project and global AGENTS.md were withheld because this project is untrusted; do not assume no rules exist."
+            : undefined,
+        project: rules.project?.text,
+      }
+    : undefined;
+
+const advisorImageNotice = (context: ConsultationContext) => {
+  if (
+    !(
+      context.imageOmissions ||
+      context.images.length ||
+      /\[Image[ :]/u.test(context.conversation)
+    )
+  ) {
+    return "";
+  }
+  const disclosure = context.supportsImages
+    ? `${context.images.length} image(s) attached below; ${context.imageOmissions} image(s) withheld by format, consent, or size/count limits`
+    : "Advisor model does not support image input; no pixels were forwarded";
+  return `\n\nImage disclosure: ${disclosure}. Only the images explicitly attached below have pixels available. Other image markers, image paths, and text descriptions are not visual evidence.`;
+};
+
 const collectAdvisorResponse = async (
   options: CollectAdvisorResponseOptions
 ) => {
@@ -81,12 +110,7 @@ const collectAdvisorResponse = async (
     advisorRedactSecretsRef && question !== undefined
       ? redactSecrets(question)
       : question;
-  const imageNotice =
-    context.imageOmissions ||
-    context.images.length ||
-    /\[Image[ :]/u.test(context.conversation)
-      ? `\n\nImage disclosure: ${context.supportsImages ? `${context.images.length} image(s) attached below; ${context.imageOmissions} image(s) withheld by format, consent, or size/count limits` : "Advisor model does not support image input; no pixels were forwarded"}. Only the images explicitly attached below have pixels available. Other image markers, image paths, and text descriptions are not visual evidence.`
-      : "";
+  const imageNotice = advisorImageNotice(context);
   const messages: Message[] = [
     {
       content: [
@@ -98,7 +122,8 @@ const collectAdvisorResponse = async (
             context.draftText,
             context.preferences?.text,
             context.untracked.map(fileTag),
-            context.tracked.map(fileTag)
+            context.tracked.map(fileTag),
+            advisorProjectRules(context.projectRules)
           )}${imageNotice}`,
           type: "text",
         },
@@ -127,6 +152,7 @@ const collectAdvisorResponse = async (
     throw new AdvisorNoAdviceError();
   }
   const response: Omit<AdvisorConsultationResult, "adviceId" | "trigger"> = {
+    agentRulesBytes: context.projectRules?.bytes || undefined,
     draftBytes: context.draftText
       ? Buffer.byteLength(context.draftText, "utf-8")
       : undefined,
@@ -208,6 +234,7 @@ export const runAdvisorGate = async (
     }
     return {
       ...parsed,
+      agentRulesBytes: result.agentRulesBytes,
       model: result.model,
       thinkingText: result.thinkingText,
       trigger,

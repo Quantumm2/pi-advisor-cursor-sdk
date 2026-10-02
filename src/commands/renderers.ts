@@ -15,6 +15,8 @@ import {
 } from "../tools/render-common.ts";
 import { formatAdvisorUsage } from "../usage.ts";
 import { ManualAdvisorProgressComponent } from "./manual-progress.ts";
+import { formatAdvisorStats } from "./outcome-stats.ts";
+import type { AdvisorStatsDetails } from "./outcome-stats.ts";
 import type { CommandRuntime } from "./types.ts";
 
 interface ManualCallEntryDetails {
@@ -24,9 +26,21 @@ interface ManualCallEntryDetails {
 
 interface ManualResultDetails {
   advisor?: string;
+  agentRulesBytes?: number;
+  preferenceBytes?: number;
   text?: string;
   usage?: unknown;
 }
+
+const formatByteSize = (bytes: number) => {
+  if (bytes >= 1024 * 1024) {
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MiB`;
+  }
+  if (bytes >= 1024) {
+    return `${Math.round(bytes / 1024)} KiB`;
+  }
+  return `${bytes} B`;
+};
 
 const manualCallRenderer =
   (runtime: CommandRuntime): EntryRenderer<ManualCallEntryDetails> =>
@@ -70,8 +84,41 @@ const manualResultRenderer: MessageRenderer<ManualResultDetails> = (
       box.addChild(new Text(theme.fg("dim", `  Usage: ${usage}`), 0, 0));
     }
   }
+  const attachments = [
+    details?.agentRulesBytes
+      ? `AGENTS.md rules attached · ${formatByteSize(details.agentRulesBytes)}`
+      : undefined,
+    details?.preferenceBytes
+      ? `Project preferences attached · ${formatByteSize(details.preferenceBytes)}`
+      : undefined,
+  ].filter((value): value is string => value !== undefined);
+  if (attachments.length) {
+    box.addChild(
+      new Text(theme.fg("dim", `  ${attachments.join(" · ")}`), 0, 0)
+    );
+  }
   box.addChild(
     new Markdown(adviceForDisplay(advice, expanded), 0, 0, getMarkdownTheme())
+  );
+  return box;
+};
+
+const outcomeStatsRenderer: MessageRenderer<AdvisorStatsDetails> = (
+  message,
+  _options,
+  theme
+) => {
+  const box = new Box(1, 1, (text) => theme.bg("customMessageBg", text));
+  box.addChild(
+    new Text(theme.fg("accent", theme.bold("◆ ADVISOR · OUTCOME STATS")), 0, 0)
+  );
+  box.addChild(
+    new Markdown(
+      formatAdvisorStats(message.details ?? { malformedLines: 0 }),
+      0,
+      0,
+      getMarkdownTheme()
+    )
   );
   return box;
 };
@@ -84,5 +131,9 @@ export const registerCommandRenderers = (runtime: CommandRuntime) => {
   runtime.pi.registerMessageRenderer?.(
     "advisor-manual-result",
     manualResultRenderer
+  );
+  runtime.pi.registerMessageRenderer?.(
+    "advisor-stats-result",
+    outcomeStatsRenderer
   );
 };

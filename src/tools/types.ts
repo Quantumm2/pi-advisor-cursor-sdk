@@ -46,6 +46,7 @@ export interface AdvisorGateFailure {
 
 export interface AdvisorConsultationResult {
   adviceId: string;
+  agentRulesBytes?: number;
   draftBytes?: number;
   imageBytes?: number;
   imageCount?: number;
@@ -63,6 +64,7 @@ export interface AdvisorConsultationResult {
 }
 
 export interface AdvisorGateResult {
+  agentRulesBytes?: number;
   decision: GateDecision;
   markdown: string;
   model: string;
@@ -86,6 +88,7 @@ export type GateFailureCategory =
 export interface AdvisorToolDetails {
   adviceId?: string;
   advisor?: string;
+  agentRulesBytes?: number;
   draftBytes?: number;
   imageBytes?: number;
   imageCount?: number;

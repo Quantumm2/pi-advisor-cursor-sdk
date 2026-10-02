@@ -48,6 +48,7 @@ export interface TurnGateCallDetails {
 
 export interface TurnGateResultDetails {
   advisor: string;
+  agentRulesBytes?: number;
   text: string;
   usage?: unknown;
 }
@@ -186,6 +187,7 @@ export const handleJevTurnEnd = async (
         customType: "advisor-turn-gate-result",
         details: {
           advisor: consulted.model,
+          agentRulesBytes: consulted.agentRulesBytes,
           text: consulted.markdown,
           usage: consulted.usage,
         },

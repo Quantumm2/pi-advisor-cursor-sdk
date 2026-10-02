@@ -3,6 +3,7 @@ import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import {
   getAdvisorSettings,
   getPersistedModelRefs,
+  setAdvisorAgentsMdContextRef,
   setAdvisorAutoLoopGateRef,
   setAdvisorBlockOnBlockedRef,
   setAdvisorCollapseResponsesRef,
@@ -126,6 +127,7 @@ const applyDisclosureSettings = (settings: AdvisorSettings) => {
   setAdvisorGitContextRef(settings.gitContext ?? "summary");
   setAdvisorGitContextMaxCharsRef(settings.gitContextMaxChars ?? 20_000);
   setAdvisorToolPoliciesRef(settings.toolPolicies ?? {});
+  setAdvisorAgentsMdContextRef(settings.agentsMdContext ?? true);
   setAdvisorTrackedFileContentRef(settings.trackedFileContent ?? false);
   setAdvisorUntrackedContentRef(settings.untrackedContent ?? false);
   setAdvisorOutcomeLoggingRef(settings.outcomeLogging ?? false);

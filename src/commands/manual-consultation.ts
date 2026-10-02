@@ -15,6 +15,8 @@ import type { CommandRuntime, ManualAdvisorProgressState } from "./types.ts";
 
 interface ManualResultDetails {
   advisor: string;
+  agentRulesBytes?: number;
+  preferenceBytes?: number;
   question?: string;
   text: string;
   usage?: AdvisorUsageSnapshot;
@@ -48,34 +50,35 @@ export const startManualConsultation = async (
   const finishHerdrActivity = runtime.herdrActivity.start();
   let scoutDetails: ScoutToolDetails | undefined;
   try {
-    const { adviceId, markdown, usage } = await runtime.requestAdvisor(
-      ctx,
-      question,
-      controller.signal,
-      (thinking, text) => {
-        if (controller.signal.aborted) {
-          return;
-        }
-        progress.phase = "active";
-        progress.thinking = thinking;
-        progress.text = text;
-        runtime.requestManualRender(ctx);
-      },
-      (event) => {
-        if (!controller.signal.aborted) {
-          runtime.scoutStatus.update(ctx, scoutStatusToken, event);
-          scoutDetails = appendScoutLifecycleEntry(
-            runtime.pi,
-            event,
-            scoutDetails
-          );
-          progress.scout = scoutDetails;
+    const { adviceId, agentRulesBytes, markdown, preferenceBytes, usage } =
+      await runtime.requestAdvisor(
+        ctx,
+        question,
+        controller.signal,
+        (thinking, text) => {
+          if (controller.signal.aborted) {
+            return;
+          }
           progress.phase = "active";
+          progress.thinking = thinking;
+          progress.text = text;
           runtime.requestManualRender(ctx);
-        }
-      },
-      gitContext
-    );
+        },
+        (event) => {
+          if (!controller.signal.aborted) {
+            runtime.scoutStatus.update(ctx, scoutStatusToken, event);
+            scoutDetails = appendScoutLifecycleEntry(
+              runtime.pi,
+              event,
+              scoutDetails
+            );
+            progress.scout = scoutDetails;
+            progress.phase = "active";
+            runtime.requestManualRender(ctx);
+          }
+        },
+        gitContext
+      );
     if (controller.signal.aborted) {
       return;
     }
@@ -103,6 +106,8 @@ export const startManualConsultation = async (
     runtime.updateAdvisorUsageStatus(ctx);
     const details: ManualResultDetails = {
       advisor: advisorRef,
+      agentRulesBytes,
+      preferenceBytes,
       question,
       text: markdown,
     };

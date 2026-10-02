@@ -1,6 +1,7 @@
 // biome-ignore lint/performance/noBarrelFile: this facade intentionally preserves the public config module contract.
 export { parseArgs } from "./config/args.ts";
 export {
+  advisorAgentsMdContextRef,
   advisorAutoLoopGateRef,
   advisorBlockOnBlockedRef,
   advisorCollapseResponsesRef,
@@ -34,6 +35,7 @@ export {
   getAdvisorSettings,
   getPersistedModelRefs,
   isSimpleMode,
+  setAdvisorAgentsMdContextRef,
   setAdvisorAutoLoopGateRef,
   setAdvisorBlockOnBlockedRef,
   setAdvisorCollapseResponsesRef,

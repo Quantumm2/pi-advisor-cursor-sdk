@@ -168,6 +168,7 @@ describe("Advisor tool rendering", () => {
           content: [{ text: "Advice", type: "text" }],
           details: {
             advisor: "provider/advisor",
+            agentRulesBytes: 2048,
             draftBytes: 512,
             imageBytes: 3_500_000,
             imageCount: 2,
@@ -181,6 +182,7 @@ describe("Advisor tool rendering", () => {
       .render(120)
       .join("\n");
     expect(multiple).toContain("2 images attached · 3.3 MiB");
+    expect(multiple).toContain("AGENTS.md rules attached · 2 KiB");
     expect(multiple).toContain("Draft attached · 512 B");
   });
 

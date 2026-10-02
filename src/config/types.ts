@@ -60,6 +60,7 @@ export const GATE_FAILURE_MODES: GateFailureMode[] = [
 
 export interface AdvisorConfig {
   advisor?: string;
+  advisorAgentsMdContext?: boolean;
   advisorAutoLoopGate?: boolean;
   advisorBlockOnBlocked?: boolean;
   advisorCollapseResponses?: boolean;

@@ -2,6 +2,7 @@ import { isString } from "../content-utils.ts";
 import type { JsonValue } from "../content-utils.ts";
 import { GIT_CONTEXT_LEVELS, isValidGitContextLevel } from "../git.ts";
 import {
+  advisorAgentsMdContextRef,
   advisorAutoLoopGateRef,
   advisorBlockOnBlockedRef,
   advisorCollapseResponsesRef,
@@ -170,6 +171,12 @@ export const CONFIG_SCHEMA = {
     current: () => configuredModelRef(advisorRef),
     persisted: true,
     type: "string",
+  },
+  advisorAgentsMdContext: {
+    accepted: "true or false",
+    current: () => advisorAgentsMdContextRef,
+    persisted: true,
+    type: "boolean",
   },
   advisorAutoLoopGate: {
     accepted: "true or false",

@@ -6,6 +6,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## Unreleased
 
+### Added
+
+- Added `/advisor-stats`, a local rendered report for retained outcome triggers, adoption, followed-versus-rejected validation pass rates, distinct pseudonymous advice hashes, and the capped ledger time window.
+- Added default-on, toggleable `AGENTS.md` context for trusted Advisor calls, with origin labels, redaction, byte caps, untrusted-rule framing, and explicit withholding for untrusted projects.
+
 ### Fixed
 
 - Prevented settings saves from overwriting malformed `advisor.json` files and rolled back runtime settings when persistence fails.

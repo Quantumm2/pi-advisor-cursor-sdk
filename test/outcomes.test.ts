@@ -11,6 +11,10 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+import {
+  aggregateOutcomeRecords,
+  parseOutcomeLog,
+} from "../src/outcome-stats.ts";
 import { appendOutcome, outcomeLogPath } from "../src/outcomes.ts";
 
 describe("outcome log", () => {
@@ -62,6 +66,86 @@ describe("outcome log", () => {
       }
       rmSync(dir, { force: true, recursive: true });
     }
+  });
+
+  test("aggregates triggers, adoption, validation rates, and malformed lines", () => {
+    const parsed = parseOutcomeLog(
+      [
+        JSON.stringify({
+          adoption: "followed",
+          adviceHash: "a",
+          timestamp: "2026-01-01T00:00:00.000Z",
+          trigger: "manual",
+          v: 1,
+          validationStatus: "passed",
+        }),
+        JSON.stringify({
+          adoption: "followed",
+          adviceHash: "b",
+          timestamp: "2026-01-02T00:00:00.000Z",
+          trigger: "turn-gate",
+          v: 1,
+          validationStatus: "failed",
+        }),
+        JSON.stringify({
+          adoption: "followed",
+          adviceHash: "d",
+          timestamp: "2026-01-02T12:00:00.000Z",
+          trigger: "manual",
+          v: 1,
+          validationStatus: "not-run",
+        }),
+        JSON.stringify({
+          adoption: "not-followed",
+          adviceHash: "c",
+          timestamp: "2026-01-03T00:00:00.000Z",
+          trigger: "executor-requested",
+          v: 1,
+          validationStatus: "passed",
+        }),
+        JSON.stringify({
+          adoption: "unknown",
+          adviceHash: "a",
+          timestamp: "2026-01-04T00:00:00.000Z",
+          trigger: "repeated-tool-call",
+          v: 1,
+          validationStatus: "not-run",
+        }),
+        "{truncated",
+      ].join("\n")
+    );
+    const stats = aggregateOutcomeRecords(
+      parsed.records,
+      parsed.malformedLines
+    );
+
+    expect(parsed.malformedLines).toBe(1);
+    expect(stats.total).toBe(5);
+    expect(stats.byTrigger).toEqual({
+      "executor-requested": 1,
+      manual: 2,
+      "repeated-tool-call": 1,
+      "turn-gate": 1,
+    });
+    expect(stats.adoption).toEqual({
+      followed: 3,
+      "not-followed": 1,
+      unknown: 1,
+    });
+    expect(stats.validationByAdoption.followed).toMatchObject({
+      failed: 1,
+      passRate: 0.5,
+      passed: 1,
+      total: 3,
+    });
+    expect(stats.validationByAdoption["not-followed"]).toMatchObject({
+      passRate: 1,
+      passed: 1,
+      total: 1,
+    });
+    expect(stats.distinctAdvices).toBe(4);
+    expect(stats.firstTimestamp).toBe("2026-01-01T00:00:00.000Z");
+    expect(stats.lastTimestamp).toBe("2026-01-04T00:00:00.000Z");
   });
 
   test("keeps concurrent appends and uses one exclusively created salt", async () => {

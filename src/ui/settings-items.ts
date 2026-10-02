@@ -472,6 +472,13 @@ export const createSettingsItems = ({
       settings.redactSecrets,
       false
     ),
+    toggle(
+      "agentsMdContext",
+      "AGENTS.md context",
+      "Include trusted project and global AGENTS.md rules in Advisor calls.",
+      settings.agentsMdContext,
+      true
+    ),
     {
       currentValue: settings.gitContext ?? "summary",
       description: "How much repository context is shared with the Advisor.",

@@ -6,6 +6,7 @@ import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { readTrackedFiles, readUntrackedFiles } from "../attachments.ts";
 import type { UntrackedAttachment } from "../attachments.ts";
 import {
+  advisorAgentsMdContextRef,
   advisorGitContextMaxCharsRef,
   advisorGitContextRef,
   advisorRedactSecretsRef,
@@ -23,7 +24,7 @@ import {
   ADVISOR_IMAGES_TOTAL_MAX_BYTES,
   selectedConversationImages,
 } from "../images.ts";
-import { readProjectPreferences } from "../preferences.ts";
+import { readProjectPreferences, readProjectRules } from "../preferences.ts";
 import { redactAndCapText, redactSecrets } from "../redaction.ts";
 import { curateAdvisorConversation } from "../scout-curation.ts";
 import { runAdvisorScout } from "../scout.ts";
@@ -64,6 +65,8 @@ export interface ConsultationContext {
   supportsImages: boolean;
   /** Redacted project preferences, if present. */
   preferences?: { bytes: number; text: string };
+  /** Redacted trusted AGENTS.md files, or a withheld-project note. */
+  projectRules?: Awaited<ReturnType<typeof readProjectRules>>;
   /** Non-cancelling Scout outcome, when Scout ran. */
   scout?: Exclude<ScoutOutcome, { cancelled: true }>;
   /** Redacted tracked-file attachments. */
@@ -130,6 +133,13 @@ export const assembleConsultationContext = async (
     ATTACHMENT_TEXT_MAX_BYTES,
     advisorRedactSecretsRef
   );
+  const projectRules = advisorAgentsMdContextRef
+    ? await readProjectRules(
+        ctx,
+        ATTACHMENT_TEXT_MAX_BYTES,
+        advisorRedactSecretsRef
+      )
+    : undefined;
   const draftText = options.draft
     ? redactAndCapText(
         options.draft,
@@ -215,6 +225,7 @@ export const assembleConsultationContext = async (
     imagePartsSeen: census.imagePartsSeen,
     images,
     preferences,
+    projectRules,
     scout: curated.scout,
     supportsImages,
     tracked,

@@ -67,6 +67,7 @@ export interface ContextPreset {
 }
 
 export interface AdvisorSettings {
+  agentsMdContext?: boolean;
   alwaysOn?: boolean;
   autoLoopGate?: boolean;
   blockOnBlocked?: boolean;

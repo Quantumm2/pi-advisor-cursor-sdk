@@ -1,5 +1,7 @@
 import { describe, expect, test } from "bun:test";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 import {
   fauxAssistantMessage,
@@ -22,10 +24,15 @@ import { withAgentDir } from "./helpers/config-fixture.ts";
 import { asExtensionContext } from "./helpers/extension-context.ts";
 import { mockPi } from "./helpers/mock-pi.ts";
 
-const fauxContext = (agentDir: string, faux: any, entries: object[] = []) =>
+const fauxContext = (
+  cwd: string,
+  faux: any,
+  entries: object[] = [],
+  trusted = false
+) =>
   asExtensionContext({
-    cwd: agentDir,
-    isProjectTrusted: () => false,
+    cwd,
+    isProjectTrusted: () => trusted,
     modelRegistry: {
       find: () => faux.models[0],
       getApiKeyAndHeaders: () => Promise.resolve({ apiKey: "key", ok: true }),
@@ -37,6 +44,88 @@ const fauxContext = (agentDir: string, faux: any, entries: object[] = []) =>
   });
 
 describe("Advisor consultation request construction", () => {
+  test("forwards trusted project and global AGENTS.md context with byte accounting", async () => {
+    const captured: string[] = [];
+    const faux = registerFauxProvider({
+      api: "pi-advisor-agents-context-test",
+      models: [{ id: "advisor", input: ["text"] }],
+      provider: "pi-advisor-agents-context-test",
+    });
+    try {
+      await withAgentDir(
+        {
+          advisor: "pi-advisor-agents-context-test/advisor",
+          advisorAgentsMdContext: true,
+          advisorGitContext: "off",
+        },
+        async (agentDir) => {
+          const project = mkdtempSync(join(tmpdir(), "pi-advisor-project-"));
+          writeFileSync(join(project, "AGENTS.md"), "project conventions");
+          writeFileSync(join(agentDir, "AGENTS.md"), "global conventions");
+          try {
+            faux.setResponses([
+              (context) => {
+                captured.push(JSON.stringify(context.messages));
+                return fauxAssistantMessage("Advice");
+              },
+            ]);
+            const result = await consultAdvisor(
+              fauxContext(project, faux, [], true)
+            );
+            expect(captured[0]).toContain("<project_rules");
+            expect(captured[0]).toContain("[project AGENTS.md]");
+            expect(captured[0]).toContain("[global AGENTS.md]");
+            expect(result.agentRulesBytes).toBeGreaterThan(0);
+          } finally {
+            rmSync(project, { force: true, recursive: true });
+          }
+        }
+      );
+    } finally {
+      faux.unregister();
+    }
+  });
+
+  test("omits AGENTS.md context when the setting is disabled", async () => {
+    const captured: string[] = [];
+    const faux = registerFauxProvider({
+      api: "pi-advisor-agents-disabled-test",
+      models: [{ id: "advisor", input: ["text"] }],
+      provider: "pi-advisor-agents-disabled-test",
+    });
+    try {
+      await withAgentDir(
+        {
+          advisor: "pi-advisor-agents-disabled-test/advisor",
+          advisorAgentsMdContext: false,
+          advisorGitContext: "off",
+        },
+        async (agentDir) => {
+          const project = mkdtempSync(join(tmpdir(), "pi-advisor-project-"));
+          writeFileSync(join(project, "AGENTS.md"), "project conventions");
+          writeFileSync(join(agentDir, "AGENTS.md"), "global conventions");
+          try {
+            faux.setResponses([
+              (context) => {
+                captured.push(JSON.stringify(context.messages));
+                return fauxAssistantMessage("Advice");
+              },
+            ]);
+            const result = await consultAdvisor(
+              fauxContext(project, faux, [], true)
+            );
+            expect(captured[0]).not.toContain("<project_rules");
+            expect(result.agentRulesBytes).toBeUndefined();
+          } finally {
+            rmSync(project, { force: true, recursive: true });
+          }
+        }
+      );
+    } finally {
+      faux.unregister();
+    }
+  });
+
   test("applies redaction at the Advisor request-context boundary", () => {
     const secret = "AKIAABCDEFGHIJKLMNOP";
     const ctx = asExtensionContext({

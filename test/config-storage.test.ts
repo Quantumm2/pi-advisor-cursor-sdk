@@ -284,10 +284,11 @@ describe("Advisor argument persistence", () => {
 describe("Config schema consistency", () => {
   test("every AdvisorConfig key has exactly one schema entry", () => {
     // Compile-time coverage (satisfies Record<keyof AdvisorConfig, ...>)
-    // guarantees no missing or extra keys; this pins the exact 45-key set.
+    // guarantees no missing or extra keys; this pins the exact 46-key set.
     const schemaKeys = Object.keys(CONFIG_SCHEMA).toSorted();
     expect(schemaKeys).toEqual([
       "advisor",
+      "advisorAgentsMdContext",
       "advisorAutoLoopGate",
       "advisorBlockOnBlocked",
       "advisorCollapseResponses",
@@ -339,6 +340,7 @@ describe("Config schema consistency", () => {
   test("persisted schema keys match the historical SAVED_CONFIG_KEYS list", () => {
     expect([...SAVED_CONFIG_KEYS].toSorted()).toEqual([
       "advisor",
+      "advisorAgentsMdContext",
       "advisorAutoLoopGate",
       "advisorBlockOnBlocked",
       "advisorCollapseResponses",
@@ -383,7 +385,7 @@ describe("Config schema consistency", () => {
       "showUsageFooter",
       "simpleMode",
     ]);
-    expect(SAVED_CONFIG_KEYS).toHaveLength(44);
+    expect(SAVED_CONFIG_KEYS).toHaveLength(45);
     expect(CONFIG_SCHEMA.advisorOutcomeLogging.persisted).toBe(false);
   });
 });

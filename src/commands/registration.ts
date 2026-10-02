@@ -7,6 +7,7 @@ import { activateAdvisor } from "./activation.ts";
 import { registerCommandLifecycle } from "./lifecycle.ts";
 import { registerManualCommand } from "./manual-command.ts";
 import { registerModelCommands } from "./model-commands.ts";
+import { registerOutcomeStatsCommand } from "./outcome-stats.ts";
 import { registerCommandRenderers } from "./renderers.ts";
 import { createCommandRuntime } from "./runtime.ts";
 import { registerSettingsCommands } from "./settings-commands.ts";
@@ -24,5 +25,6 @@ export const registerCommands = (
   registerCommandLifecycle(runtime, activate);
   registerManualCommand(runtime);
   registerModelCommands(runtime);
+  registerOutcomeStatsCommand(runtime);
   registerSettingsCommands(runtime);
 };

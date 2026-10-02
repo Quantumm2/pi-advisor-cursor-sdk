@@ -19,10 +19,11 @@ export type ManualConsult = (
   gitContext?: GitContextLevel
 ) => Promise<{
   adviceId?: string;
-  markdown: string;
-  thinkingText: string;
+  agentRulesBytes?: number;
   draftBytes?: number;
+  markdown: string;
   preferenceBytes?: number;
+  thinkingText: string;
   usage?: unknown;
 }>;
 

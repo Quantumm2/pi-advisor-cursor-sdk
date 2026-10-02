@@ -149,6 +149,21 @@ describe("Advisor settings selector", () => {
     expect(saved.alwaysOn).toBe(true);
   });
 
+  test("shows AGENTS.md context on by default and persists the toggle", () => {
+    let saved: any;
+    const { selector } = openSelector({
+      onChange: (settings) => {
+        saved = settings;
+      },
+    });
+    focusSettingsRow(selector, "AGENTS.md context");
+    expect(stripTerminalSequences(selector.render(120).join("\n"))).toContain(
+      "AGENTS.md context"
+    );
+    selector.handleInput(" ");
+    expect(saved.agentsMdContext).toBe(false);
+  });
+
   test("renders a context depth meter", () => {
     const { selector } = openSelector({
       initial: { contextMaxChars: Number.MAX_SAFE_INTEGER },

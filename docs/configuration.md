@@ -45,6 +45,7 @@ All fields are optional. The model refs below are explicit examples of models av
   "advisorToolResultMaxBytes": 51200,
 
   "advisorRedactSecrets": false,
+  "advisorAgentsMdContext": true,
   "advisorTrackedFileContent": false,
   "advisorUntrackedContent": false,
   "advisorDisableSameModel": true,
@@ -94,6 +95,14 @@ Scout usage, latency, selection counts, pre-Scout omissions, and fallback reason
 - Tool results default to Pi's `2000` lines and `50 KiB` limits. Oversized results preserve their beginning and end with an omission marker.
 - `advisorLoopThreshold` is an integer of at least `2`; its default is `3`.
 - Omit `advisorMaxCallsPerSession` for an unlimited shared budget. Otherwise it must be a non-negative safe integer.
+
+## AGENTS.md and Advisor preferences
+
+`advisorAgentsMdContext` defaults to `true`. In a trusted project, each Advisor call may include the project-root `AGENTS.md` and the global `~/.pi/agent/AGENTS.md` when present. Each source is origin-labelled, redacted when `advisorRedactSecrets` is enabled, capped at 8 KiB, and included in a combined 16 KiB rules budget. The Advisor receives them in a separate untrusted `<project_rules>` block as review guidance, never as executable instructions.
+
+An untrusted project sends neither rules file; the Advisor is told that rules were withheld rather than being shown an apparently rule-free project. The global rules file is never sent for an untrusted project. Turn the setting off to restore the previous behavior.
+
+`.pi/advisor-preferences.md` remains separate: it is an explicit, Advisor-specific project brief, while `AGENTS.md` supplies general project/global conventions. Both are untrusted context, and neither can override the Advisor system instructions; the explicit preferences brief is more specific when the two sources conflict.
 
 ## Consultation responses
 

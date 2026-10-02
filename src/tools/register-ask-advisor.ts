@@ -239,6 +239,7 @@ export const registerAskAdvisorTool = ({
           const details: AdvisorToolDetails = {
             adviceId: result.adviceId,
             advisor: result.model,
+            agentRulesBytes: result.agentRulesBytes,
             draftBytes: result.draftBytes,
             imageBytes: result.imageBytes,
             imageCount: result.imageCount,

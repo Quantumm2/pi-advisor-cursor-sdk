@@ -2,6 +2,7 @@ import { DEFAULT_JEV_MODEL } from "../config/types.ts";
 import type { AdvisorSettings, ContextPreset } from "./types.ts";
 
 const BOOLEAN_SETTING_FIELDS = [
+  "agentsMdContext",
   "autoLoopGate",
   "blockOnBlocked",
   "collapseResponses",
