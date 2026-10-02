@@ -27,6 +27,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - Fallback retries count as one consultation against the shared Advisor budget; follow-ups count as one consultation each and require a new question without extra attachments or context overrides.
 - Pi 0.87.x and 0.99.x hosts are no longer supported; Pi 1.0.x is now the supported Pi host and the peer range is `^1.0.0`.
 - Updated the development toolchain to the Pi 1.0.0 packages.
+- Updated the Node.js type definitions to 26.6.4.
 
 ## 0.9.1 - 2026-09-30
 
