@@ -6,6 +6,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## Unreleased
 
+### Fixed
+
+- Prevented settings saves from overwriting malformed `advisor.json` files and rolled back runtime settings when persistence fails.
+- Kept trusted project preferences inside the trusted project during file replacement races and isolated Advisor safety state between sessions.
+- Stopped discarded streaming renders from retaining repaint timers, made failed manual submissions retryable, and bounded unterminated-secret redaction.
+- Preserved `=` in model arguments, enforced UTF-8 byte caps on reattached advice, deduplicated withheld image paths, and avoided false zero-cost totals for incomplete provider usage.
+
 ### Changed
 
 - Pi 0.87.x and 0.99.x hosts are no longer supported; Pi 1.0.x is now the supported Pi host and the peer range is `^1.0.0`.
