@@ -178,6 +178,12 @@ describe("Conversation Module", () => {
     expect(redactSecrets("The password field is optional.")).toBe(
       "The password field is optional."
     );
+    expect(redactSecrets('password="unterminated\nKeep this context.')).toBe(
+      "[REDACTED SECRET]\nKeep this context."
+    );
+    expect(
+      redactSecrets('password="first line\nsecond secret"\nKeep this context.')
+    ).toBe("[REDACTED SECRET]\nKeep this context.");
   });
 
   test("redacts every documented secret pattern without retaining the match", () => {

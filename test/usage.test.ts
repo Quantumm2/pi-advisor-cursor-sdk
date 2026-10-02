@@ -85,6 +85,24 @@ describe("Advisor usage", () => {
     );
   });
 
+  test("does not turn partial provider costs into a zero total", () => {
+    const partial = {
+      cost: { input: 0.01 },
+      input: 1200,
+      output: 456,
+    };
+    expect(advisorUsageForPi(partial)).toBeUndefined();
+
+    const totals = emptyAdvisorUsageTotals();
+    addAdvisorUsage(totals, partial);
+    expect(totals).toMatchObject({
+      costCalls: 0,
+      input: 1200,
+      knownCalls: 1,
+      output: 456,
+    });
+  });
+
   test("converts partial and zero-cost usage to Pi's complete shape", () => {
     expect(
       advisorUsageForPi({

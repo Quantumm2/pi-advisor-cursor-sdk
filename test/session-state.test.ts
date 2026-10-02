@@ -5,8 +5,25 @@ import {
   normalizedToolSignature,
   normalizeToolInput,
 } from "../src/session-state.ts";
+import { sessionStateFor } from "../src/tools/session.ts";
 
 describe("AdvisorSessionState", () => {
+  test("scopes default registration state to its extension owner", () => {
+    // SAFETY: empty objects only stand in for distinct ExtensionAPI owners in this identity-scoping test.
+    const firstOwner = {} as any;
+    // SAFETY: empty objects only stand in for distinct ExtensionAPI owners in this identity-scoping test.
+    const secondOwner = {} as any;
+    const first = sessionStateFor(firstOwner);
+    const second = sessionStateFor(secondOwner);
+
+    first.block("first session remains blocked");
+    first.consumeCall();
+
+    expect(sessionStateFor(firstOwner)).toBe(first);
+    expect(second.blocked).toBe(false);
+    expect(second.consumedCalls).toBe(0);
+  });
+
   test("blocks the third equivalent normalized tool action and resets for a new action", () => {
     const state = new AdvisorSessionState();
     expect(

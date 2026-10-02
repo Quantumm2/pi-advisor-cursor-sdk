@@ -1,7 +1,7 @@
 import type { Usage } from "@earendil-works/pi-ai/compat";
 
 import { isNumber, isRecordOf } from "./content-utils.ts";
-import type { JsonValue } from "./content-utils.ts";
+import type { JsonValue, RecordValue } from "./content-utils.ts";
 
 /** Normalized usage returned by an Advisor or Scout provider response. */
 export interface AdvisorUsageSnapshot {
@@ -33,6 +33,18 @@ const add = (left: number | undefined, right: number | undefined) =>
 
 const costFields = ["input", "output", "cacheRead", "cacheWrite", "total"];
 
+const hasPartialProviderCost = (
+  snapshot: AdvisorUsageSnapshot,
+  usage: RecordValue
+) => {
+  const cost = isRecordOf(usage.cost) ? usage.cost : undefined;
+  return (
+    cost !== undefined &&
+    snapshot.cost === undefined &&
+    costFields.some((field) => finite(cost[field]) !== undefined)
+  );
+};
+
 /** Extracts provider-agnostic usage fields without trusting provider metadata. */
 export const snapshotAdvisorUsage = <Input>(
   usage: Input
@@ -62,23 +74,39 @@ export const snapshotAdvisorUsage = <Input>(
 export const advisorUsageCost = <Input>(usage: Input): number | undefined =>
   snapshotAdvisorUsage(usage)?.cost;
 
+const completeUsageSnapshot = <Input>(
+  usage: Input
+): { snapshot: AdvisorUsageSnapshot; usage: RecordValue } | undefined => {
+  const snapshot = snapshotAdvisorUsage(usage);
+  if (!(snapshot && isRecordOf(usage))) {
+    return;
+  }
+  if (hasPartialProviderCost(snapshot, usage)) {
+    return;
+  }
+  return { snapshot, usage };
+};
+
 /**
  * Converts supported provider usage to Pi's complete nested-tool usage shape.
  * Missing fields become zero only at this Pi API boundary; absent usage remains
  * undefined so an unavailable request is never presented as a zero-cost call.
  */
 export const advisorUsageForPi = <Input>(usage: Input): Usage | undefined => {
-  const snapshot = snapshotAdvisorUsage(usage);
-  if (!(snapshot && isRecordOf(usage))) {
+  const complete = completeUsageSnapshot(usage);
+  if (!complete) {
     return undefined;
   }
-  const cost = isRecordOf(usage.cost) ? usage.cost : undefined;
+  const { snapshot } = complete;
+  const cost = isRecordOf(complete.usage.cost)
+    ? complete.usage.cost
+    : undefined;
   const input = snapshot.input ?? 0;
   const output = snapshot.output ?? 0;
   const cacheRead = snapshot.cacheRead ?? 0;
   const cacheWrite = snapshot.cacheWrite ?? 0;
-  const cacheWrite1h = finite(usage.cacheWrite1h);
-  const reasoning = finite(usage.reasoning);
+  const cacheWrite1h = finite(complete.usage.cacheWrite1h);
+  const reasoning = finite(complete.usage.reasoning);
   const piUsage: Usage = {
     cacheRead,
     cacheWrite,

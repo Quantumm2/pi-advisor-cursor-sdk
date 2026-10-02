@@ -10,11 +10,7 @@ import registerExtension, {
 import { registerCommands } from "../src/commands.ts";
 import { HerdrAdvisorActivity } from "../src/herdr.ts";
 import { AdvisorSessionState } from "../src/session-state.ts";
-import {
-  advisorSessionState,
-  parseAutomaticDecision,
-  registerAdvisorTool,
-} from "../src/tools.ts";
+import { parseAutomaticDecision, registerAdvisorTool } from "../src/tools.ts";
 import { asExtensionContext } from "./helpers/extension-context.ts";
 import type { JsonValue } from "./helpers/extension-context.ts";
 import { mockPi } from "./helpers/mock-pi.ts";
@@ -325,9 +321,11 @@ describe("Extension Registration", () => {
       resolveConsult = resolve;
     });
 
-    advisorSessionState.resetTask();
+    const state = new AdvisorSessionState();
+    state.resetTask();
     registerCommands(mockPi({ commands, events, sent }), {
       consult: async () => pendingConsult,
+      sessionState: state,
     });
     await commands.get("advisor-manual").handler("", {
       cwd: tmpdir(),
@@ -340,7 +338,7 @@ describe("Extension Registration", () => {
     resolveConsult({ markdown: "Too late.", thinkingText: "" });
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(sent).toEqual([]);
-    expect(advisorSessionState.summary(undefined)).toBeUndefined();
+    expect(state.summary(undefined)).toBeUndefined();
   });
 
   test("suppresses late Scout lifecycle from a shutdown manual consultation", async () => {

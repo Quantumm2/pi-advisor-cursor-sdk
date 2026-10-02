@@ -119,6 +119,29 @@ describe("screenConsultation", () => {
     expect(summary).not.toContain("Jev cost");
   });
 
+  test("caps reattached advice by UTF-8 bytes", async () => {
+    setAdvisorJevFilterEnabledRef(false);
+    const session = new AdvisorSessionState();
+    session.issueAdvice(
+      "advice-unicode",
+      "🧪".repeat(2000),
+      "executor-requested",
+      false,
+      "ship it?"
+    );
+
+    const outcome = await screenConsultation(ctxWith(), session, {
+      question: "Ship it?",
+    });
+
+    expect(outcome.decision).toBe("skip");
+    if (outcome.decision === "skip") {
+      expect(Buffer.byteLength(outcome.reattachedAdvice ?? "", "utf-8")).toBe(
+        4 * 1024
+      );
+    }
+  });
+
   test("allows on confident negligible stakes AND self-answerable only otherwise skips", async () => {
     const session = new AdvisorSessionState();
     const allowMock = systemOneMock([verdictResponse(0.2, 0.9)]);

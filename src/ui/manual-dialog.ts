@@ -24,6 +24,7 @@ const TUI_INPUT_TAB: keyof Keybindings = ["tui", "input", "tab"].join(
 interface ManualDialogState {
   completed: boolean;
   focused: boolean;
+  submitting: boolean;
 }
 
 const isShiftTab = (keyData: string): boolean =>
@@ -40,6 +41,7 @@ export class ManualAdvisorDialog implements Component, Focusable {
   private readonly state: ManualDialogState = {
     completed: false,
     focused: false,
+    submitting: false,
   };
 
   get focused(): boolean {
@@ -273,17 +275,22 @@ export class ManualAdvisorDialog implements Component, Focusable {
   }
 
   private submit(message = this.editor.getText()): void {
-    if (this.state.completed) {
+    if (this.state.completed || this.state.submitting) {
       return;
     }
-    this.state.completed = true;
+    this.state.submitting = true;
     const request: ManualAdvisorRequest = {
       gitContext: this.gitLevels[this.gitIndex] ?? "off",
     };
     if (message) {
       request.message = message;
     }
-    this.options.onSubmit(request);
+    try {
+      this.options.onSubmit(request);
+      this.state.completed = true;
+    } finally {
+      this.state.submitting = false;
+    }
   }
 
   private cancel(): void {

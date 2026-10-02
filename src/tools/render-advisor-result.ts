@@ -24,10 +24,25 @@ const advisorResultDetails = (result: AgentToolResult<AdvisorToolDetails>) =>
 
 const syncRenderPhase = (context: AdvisorToolContext, phase: string) => {
   if (context.state.phase !== phase && context.state.timerId) {
-    clearInterval(context.state.timerId);
+    clearTimeout(context.state.timerId);
     context.state.timerId = undefined;
   }
   context.state.phase = phase;
+};
+
+const scheduleRender = (context: AdvisorToolContext) => {
+  const timer = setTimeout(() => {
+    if (context.state.timerId !== timer) {
+      return;
+    }
+    context.state.timerId = undefined;
+    try {
+      context.invalidate();
+    } catch {
+      // The render slot may have been discarded before the repaint fired.
+    }
+  }, 80);
+  context.state.timerId = timer;
 };
 
 const formatByteSize = (bytes: number): string => {
@@ -100,15 +115,7 @@ const renderPartialAdvisorResult = (
     scout?.status === "calling" || scout?.status === "streaming";
   syncRenderPhase(context, scoutActive ? "scout" : "advisor");
   if (!context.state.timerId) {
-    context.state.timerId = setInterval(() => {
-      try {
-        context.invalidate();
-      } catch {
-        // Renderer context is gone; stop repainting and drop the timer.
-        clearInterval(context.state.timerId);
-        context.state.timerId = undefined;
-      }
-    }, 80);
+    scheduleRender(context);
   }
   if (scout) {
     renderScoutDetails(box, scout, expanded, theme);
@@ -177,7 +184,7 @@ const renderFinalAdvisorResult = (
 ) => {
   syncRenderPhase(context, "final");
   if (context.state.timerId) {
-    clearInterval(context.state.timerId);
+    clearTimeout(context.state.timerId);
     context.state.timerId = undefined;
   }
   const details = advisorResultDetails(result);

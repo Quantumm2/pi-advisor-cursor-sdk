@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
+import { initTheme } from "@earendil-works/pi-coding-agent";
 import {
   getKeybindings,
   Key,
@@ -17,6 +18,8 @@ import {
 import type { ManualAdvisorRequest } from "../src/ui.ts";
 import { TextSettingSubmenu } from "../src/ui/text-setting-submenu.ts";
 import { plainThemeMock } from "./helpers/theme.ts";
+
+initTheme();
 
 const theme = plainThemeMock;
 
@@ -242,6 +245,49 @@ describe("ManualAdvisorDialog", () => {
     dialog.handleInput("x");
     const after = dialog.render(80).join("\n");
     expect(after).not.toBe(before);
+  });
+
+  test("keeps the dialog retryable when submit fails", () => {
+    const { tui } = makeTui();
+    let attempts = 0;
+    const dialog = new ManualAdvisorDialog({
+      gitContext: "summary",
+      keybindings: getKeybindings(),
+      onCancel: () => {},
+      onSubmit: () => {
+        attempts += 1;
+        if (attempts === 1) {
+          throw new Error("submit failed");
+        }
+      },
+      theme,
+      tui,
+    });
+    dialog.focused = true;
+
+    expect(() => dialog.handleInput("\r")).toThrow("submit failed");
+    dialog.handleInput("\r");
+    expect(attempts).toBe(2);
+  });
+
+  test("ignores reentrant submit events while submitting", () => {
+    const { tui } = makeTui();
+    let attempts = 0;
+    const dialog = new ManualAdvisorDialog({
+      gitContext: "summary",
+      keybindings: getKeybindings(),
+      onCancel: () => {},
+      onSubmit: () => {
+        attempts += 1;
+        dialog.handleInput("\r");
+      },
+      theme,
+      tui,
+    });
+    dialog.focused = true;
+
+    dialog.handleInput("\r");
+    expect(attempts).toBe(1);
   });
 
   test("cancels exactly once and suppresses input after completion", () => {

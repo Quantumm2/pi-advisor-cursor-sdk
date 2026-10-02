@@ -16,7 +16,9 @@ export const parseArgs = (args: string): string | undefined => {
   let nextAdvisor = advisorRef;
   let nextContextMaxChars = contextMaxCharsRef;
   for (const token of args.trim().split(ARGUMENT_WHITESPACE).filter(Boolean)) {
-    const [key, value] = token.split("=");
+    const separator = token.indexOf("=");
+    const key = separator === -1 ? token : token.slice(0, separator);
+    const value = separator === -1 ? undefined : token.slice(separator + 1);
     if (key === "executor" && value) {
       nextExecutor = value;
     }

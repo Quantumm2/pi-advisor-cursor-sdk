@@ -12,7 +12,7 @@ import { registerToolLifecycle } from "./register-lifecycle.ts";
 import { registerOutcomeTool } from "./register-outcome.ts";
 import { registerToolRenderers } from "./register-renderers.ts";
 import { ScoutStatusManager } from "./scout-status.ts";
-import { advisorSessionState } from "./session.ts";
+import { sessionStateFor } from "./session.ts";
 import type {
   ToolRegistrationContext,
   ToolRegistrationDependencies,
@@ -20,7 +20,7 @@ import type {
 
 export const registerAdvisorTool = (
   pi: ExtensionAPI,
-  session: AdvisorSessionState = advisorSessionState,
+  session: AdvisorSessionState = sessionStateFor(pi),
   dependencies: ToolRegistrationDependencies = {}
 ): void => {
   const registration: ToolRegistrationContext = {

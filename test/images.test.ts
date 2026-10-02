@@ -473,6 +473,24 @@ describe("Advisor image disclosure", () => {
         4
       );
       expect(refused).toMatchObject({ images: [], omitted: 1 });
+      const duplicateRefused = await readImageFiles(
+        cwd,
+        ["new.png", "new.png"],
+        false,
+        "untracked",
+        1000,
+        4
+      );
+      expect(duplicateRefused).toMatchObject({ images: [], omitted: 1 });
+      const duplicateInvalidPath = await readImageFiles(
+        cwd,
+        ["../new.png", "../new.png"],
+        true,
+        "untracked",
+        1000,
+        4
+      );
+      expect(duplicateInvalidPath).toMatchObject({ images: [], omitted: 1 });
       const accepted = await readImageFiles(
         cwd,
         ["tracked.png", "new.png", "bad.png", "link.png", "../new.png"],

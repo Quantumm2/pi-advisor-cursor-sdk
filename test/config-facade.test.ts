@@ -100,6 +100,11 @@ describe("Config Module", () => {
     expect(contextMaxCharsRef).toBe(30_000);
   });
 
+  test("preserves equals signs in model argument values", () => {
+    expect(parseArgs("advisor=provider/model=with=equals")).toBeUndefined();
+    expect(advisorRef).toBe("provider/model=with=equals");
+  });
+
   test("parseArgs rejects invalid context limits without changing configuration", () => {
     setContextMaxCharsRef(DEFAULT_CONTEXT_MAX_CHARS);
     const executorBefore = executorRef;

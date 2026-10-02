@@ -1,3 +1,4 @@
+import { constants } from "node:fs";
 import { lstat, open, realpath } from "node:fs/promises";
 import { join, relative } from "node:path";
 
@@ -38,8 +39,19 @@ export const readProjectPreferences = async (
     if (!inside(root, resolved)) {
       return;
     }
-    const file = await open(resolved, "r");
+    const flags = constants.O_NOFOLLOW
+      ? constants.O_RDONLY + constants.O_NOFOLLOW
+      : constants.O_RDONLY;
+    const file = await open(resolved, flags);
     try {
+      const opened = await file.stat();
+      if (
+        !opened.isFile() ||
+        opened.dev !== stats.dev ||
+        opened.ino !== stats.ino
+      ) {
+        return;
+      }
       const buffer = Buffer.alloc(maxBytes + 1);
       const { bytesRead } = await file.read(buffer, 0, buffer.length, 0);
       const source = buffer.subarray(0, bytesRead).toString("utf-8");

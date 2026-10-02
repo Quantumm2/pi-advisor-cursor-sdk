@@ -12,7 +12,7 @@ import {
   sameModelAdvisorNotice,
 } from "../tools/model-access.ts";
 import { ScoutStatusManager } from "../tools/scout-status.ts";
-import { advisorSessionState as defaultAdvisorSessionState } from "../tools/session.ts";
+import { sessionStateFor } from "../tools/session.ts";
 import { uiAction } from "../ui-guard.ts";
 import type {
   CommandDependencies,
@@ -60,8 +60,7 @@ class CommandRuntime implements CommandRuntimeContract {
 
   constructor(pi: ExtensionAPI, dependencies: CommandDependencies = {}) {
     this.pi = pi;
-    this.advisorSessionState =
-      dependencies.sessionState ?? defaultAdvisorSessionState;
+    this.advisorSessionState = dependencies.sessionState ?? sessionStateFor(pi);
     this.herdrActivity = dependencies.herdrActivity ?? herdrAdvisorActivity;
     this.scoutStatus =
       dependencies.statusManager ?? new ScoutStatusManager(false);

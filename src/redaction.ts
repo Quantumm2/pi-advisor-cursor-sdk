@@ -5,7 +5,7 @@ const PEM_BEGIN_PATTERN = /-----BEGIN(?: [A-Z0-9]+)? PRIVATE KEY-----/giu;
 const PEM_END_PATTERN = /-----END(?: [A-Z0-9]+)? PRIVATE KEY-----/iu;
 const CREDENTIAL_NAME = String.raw`(?:api[_-]?key|token|secret|password|passwd)`;
 const SECRET_ASSIGNMENT_PATTERN = new RegExp(
-  String.raw`(?:(?:"(?:[a-z0-9]+[_-])*?${CREDENTIAL_NAME}"|'(?:[a-z0-9]+[_-])*?${CREDENTIAL_NAME}')|(?:\b|_)${CREDENTIAL_NAME})\s*[:=]\s*(?:"(?:\\.|[^"])*(?:"|$)|'(?:\\.|[^'])*(?:'|$)|[^\s"'&,;)}\]]+)`,
+  String.raw`(?:(?:"(?:[a-z0-9]+[_-])*?${CREDENTIAL_NAME}"|'(?:[a-z0-9]+[_-])*?${CREDENTIAL_NAME}')|(?:\b|_)${CREDENTIAL_NAME})[ \t]*[:=][ \t]*(?:"(?:\\.|[^"])*"|'(?:\\.|[^'])*'|"(?:\\.|[^"\r\n])*(?=\r?\n|$)|'(?:\\.|[^'\r\n])*(?=\r?\n|$)|[^\s"'&,;)}\]]+)`,
   "giu"
 );
 const SECRET_PATTERNS = [

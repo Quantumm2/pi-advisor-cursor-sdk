@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { registerCommands } from "../src/commands.ts";
 import { resetConfigCache } from "../src/config.ts";
 import { AdvisorSessionState } from "../src/session-state.ts";
-import { advisorSessionState, registerAdvisorTool } from "../src/tools.ts";
+import { registerAdvisorTool } from "../src/tools.ts";
 import { withAgentDir } from "./helpers/config-fixture.ts";
 import { asExtensionContext } from "./helpers/extension-context.ts";
 import { mockPi } from "./helpers/mock-pi.ts";
@@ -335,6 +335,7 @@ describe("Advisor loop-gate budget behavior", () => {
 
   test("reserves ask_advisor without consuming its budget", () => {
     const events = new Map<string, any>();
+    const state = new AdvisorSessionState();
     registerAdvisorTool(
       mockPi(
         { activeTools: ["ask_advisor"], events },
@@ -344,15 +345,16 @@ describe("Advisor loop-gate budget behavior", () => {
           registerMessageRenderer: () => {},
           registerTool: () => {},
         }
-      )
+      ),
+      state
     );
     const toolCall = events.get("tool_call");
-    advisorSessionState.resetTask();
+    state.resetTask();
     toolCall(
       { input: {}, toolCallId: "reserved", toolName: "ask_advisor" },
       { cwd: tmpdir(), hasUI: false, isProjectTrusted: () => false }
     );
-    expect(advisorSessionState.consumedCalls).toBe(0);
+    expect(state.consumedCalls).toBe(0);
   });
 
   test("releases budget reservations when Jev skips a consultation", async () => {

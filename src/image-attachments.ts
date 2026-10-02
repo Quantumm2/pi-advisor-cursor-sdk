@@ -72,9 +72,13 @@ export const readImageFiles = async (
   remainingBytes: number,
   remainingCount: number
 ): Promise<{ images: ImageAttachment[]; omitted: number }> => {
-  const names = Array.isArray(requested)
-    ? requested.filter((path) => isString(path) && imageFileCandidate(path))
-    : [];
+  const names = [
+    ...new Set(
+      Array.isArray(requested)
+        ? requested.filter((path) => isString(path) && imageFileCandidate(path))
+        : []
+    ),
+  ];
   if (!enabled || !names.length) {
     return { images: [], omitted: names.length };
   }

@@ -826,7 +826,9 @@ var parseArgs = (args) => {
   let nextAdvisor = advisorRef;
   let nextContextMaxChars = contextMaxCharsRef;
   for (const token of args.trim().split(ARGUMENT_WHITESPACE).filter(Boolean)) {
-    const [key, value] = token.split("=");
+    const separator = token.indexOf("=");
+    const key = separator === -1 ? token : token.slice(0, separator);
+    const value = separator === -1 ? undefined : token.slice(separator + 1);
     if (key === "executor" && value) {
       nextExecutor = value;
     }
@@ -971,6 +973,21 @@ var readExistingConfig = (path) => {
     return {};
   }
 };
+var readConfigForSave = (path) => {
+  if (!existsSync(path)) {
+    return {};
+  }
+  let parsed;
+  try {
+    parsed = JSON.parse(readFileSync(path, "utf-8"));
+  } catch (error) {
+    throw new Error(`Cannot save Advisor configuration at ${path}: existing JSON is malformed; fix advisor.json before saving.`, { cause: error });
+  }
+  if (!isRecord(parsed)) {
+    throw new Error(`Cannot save Advisor configuration at ${path}: configuration must be a JSON object.`);
+  }
+  return parsed;
+};
 var shouldPersistConfigKey = (key, persistAdvisor, persistExecutor) => (key !== "advisor" || persistAdvisor) && (key !== "executor" || persistExecutor);
 var applyChangedConfigValues = (existing, current, changedKeys, persistAdvisor, persistExecutor) => {
   const dropped = new Set;
@@ -1052,13 +1069,13 @@ var saveConfig = (_ctx, options = {}) => {
   const path = join(getAgentDir(), "advisor.json");
   const persistAdvisor = options.persistAdvisor ?? true;
   const persistExecutor = options.persistExecutor ?? true;
-  const existing = readExistingConfig(path);
   const current = currentConfigState();
   const baseline = loadedConfigPath === path ? loadedConfigState : undefined;
   const changedKeys = baseline ? SAVED_CONFIG_KEYS.filter((key) => !sameConfigValue(current[key], baseline[key])) : [...SAVED_CONFIG_KEYS];
   if (changedKeys.length === 0) {
     return path;
   }
+  const existing = readConfigForSave(path);
   const data = applyChangedConfigValues(existing, current, changedKeys, persistAdvisor, persistExecutor);
   writeFileSync(path, `${JSON.stringify(data, null, 2)}
 `);
@@ -1076,7 +1093,7 @@ var saveConfig = (_ctx, options = {}) => {
 };
 var saveGlobalOutcomeLogging = (enabled) => {
   const path = join(getAgentDir(), "advisor.json");
-  const existing = readExistingConfig(path);
+  const existing = readConfigForSave(path);
   writeFileSync(path, `${JSON.stringify({ ...existing, advisorOutcomeLogging: enabled }, null, 2)}
 `);
   resetConfigCache();
@@ -1505,7 +1522,7 @@ var REDACTION_MARKER = "[REDACTED SECRET]";
 var PEM_BEGIN_PATTERN = /-----BEGIN(?: [A-Z0-9]+)? PRIVATE KEY-----/giu;
 var PEM_END_PATTERN = /-----END(?: [A-Z0-9]+)? PRIVATE KEY-----/iu;
 var CREDENTIAL_NAME = String.raw`(?:api[_-]?key|token|secret|password|passwd)`;
-var SECRET_ASSIGNMENT_PATTERN = new RegExp(String.raw`(?:(?:"(?:[a-z0-9]+[_-])*?${CREDENTIAL_NAME}"|'(?:[a-z0-9]+[_-])*?${CREDENTIAL_NAME}')|(?:\b|_)${CREDENTIAL_NAME})\s*[:=]\s*(?:"(?:\\.|[^"])*(?:"|$)|'(?:\\.|[^'])*(?:'|$)|[^\s"'&,;)}\]]+)`, "giu");
+var SECRET_ASSIGNMENT_PATTERN = new RegExp(String.raw`(?:(?:"(?:[a-z0-9]+[_-])*?${CREDENTIAL_NAME}"|'(?:[a-z0-9]+[_-])*?${CREDENTIAL_NAME}')|(?:\b|_)${CREDENTIAL_NAME})[ \t]*[:=][ \t]*(?:"(?:\\.|[^"])*"|'(?:\\.|[^'])*'|"(?:\\.|[^"\r\n])*(?=\r?\n|$)|'(?:\\.|[^'\r\n])*(?=\r?\n|$)|[^\s"'&,;)}\]]+)`, "giu");
 var SECRET_PATTERNS = [
   /-----BEGIN(?: [A-Z0-9]+)? PRIVATE KEY-----[\s\S]*?-----END(?: [A-Z0-9]+)? PRIVATE KEY-----/giu,
   /\bBearer\s+[A-Za-z0-9._~+/=-]{8,}/giu,
@@ -2408,7 +2425,9 @@ var readImageAttachment = async (root, name, mimeType, remaining) => {
   }
 };
 var readImageFiles = async (cwd, requested, enabled, kind, remainingBytes, remainingCount) => {
-  const names = Array.isArray(requested) ? requested.filter((path) => isString(path) && imageFileCandidate(path)) : [];
+  const names = [
+    ...new Set(Array.isArray(requested) ? requested.filter((path) => isString(path) && imageFileCandidate(path)) : [])
+  ];
   if (!enabled || !names.length) {
     return { images: [], omitted: names.length };
   }
@@ -2445,6 +2464,7 @@ var readImageFiles = async (cwd, requested, enabled, kind, remainingBytes, remai
 };
 
 // src/preferences.ts
+import { constants as constants3 } from "node:fs";
 import { lstat as lstat3, open as open3, realpath as realpath3 } from "node:fs/promises";
 import { join as join2, relative as relative2 } from "node:path";
 var PREFERENCES_MAX_BYTES = 8 * 1024;
@@ -2468,8 +2488,13 @@ var readProjectPreferences = async (ctx, maxBytes = PREFERENCES_MAX_BYTES, redac
     if (!inside(root, resolved)) {
       return;
     }
-    const file = await open3(resolved, "r");
+    const flags = constants3.O_NOFOLLOW ? constants3.O_RDONLY + constants3.O_NOFOLLOW : constants3.O_RDONLY;
+    const file = await open3(resolved, flags);
     try {
+      const opened = await file.stat();
+      if (!opened.isFile() || opened.dev !== stats.dev || opened.ino !== stats.ino) {
+        return;
+      }
       const buffer = Buffer.alloc(maxBytes + 1);
       const { bytesRead } = await file.read(buffer, 0, buffer.length, 0);
       const source = buffer.subarray(0, bytesRead).toString("utf-8");
@@ -3100,6 +3125,10 @@ var buildScoutManifest = (ctx, options = {}) => {
 var finite = (value) => isNumber(value) && Number.isFinite(value) && value >= 0 ? value : undefined;
 var add = (left, right) => left === undefined || right === undefined ? left ?? right : left + right;
 var costFields = ["input", "output", "cacheRead", "cacheWrite", "total"];
+var hasPartialProviderCost = (snapshot, usage) => {
+  const cost = isRecordOf(usage.cost) ? usage.cost : undefined;
+  return cost !== undefined && snapshot.cost === undefined && costFields.some((field) => finite(cost[field]) !== undefined);
+};
 var snapshotAdvisorUsage = (usage) => {
   if (!isRecordOf(usage)) {
     return;
@@ -3117,18 +3146,29 @@ var snapshotAdvisorUsage = (usage) => {
   return Object.values(snapshot).some((value) => value !== undefined) || hasCostField ? snapshot : undefined;
 };
 var advisorUsageCost = (usage) => snapshotAdvisorUsage(usage)?.cost;
-var advisorUsageForPi = (usage) => {
+var completeUsageSnapshot = (usage) => {
   const snapshot = snapshotAdvisorUsage(usage);
   if (!(snapshot && isRecordOf(usage))) {
     return;
   }
-  const cost = isRecordOf(usage.cost) ? usage.cost : undefined;
+  if (hasPartialProviderCost(snapshot, usage)) {
+    return;
+  }
+  return { snapshot, usage };
+};
+var advisorUsageForPi = (usage) => {
+  const complete = completeUsageSnapshot(usage);
+  if (!complete) {
+    return;
+  }
+  const { snapshot } = complete;
+  const cost = isRecordOf(complete.usage.cost) ? complete.usage.cost : undefined;
   const input = snapshot.input ?? 0;
   const output = snapshot.output ?? 0;
   const cacheRead = snapshot.cacheRead ?? 0;
   const cacheWrite = snapshot.cacheWrite ?? 0;
-  const cacheWrite1h = finite(usage.cacheWrite1h);
-  const reasoning = finite(usage.reasoning);
+  const cacheWrite1h = finite(complete.usage.cacheWrite1h);
+  const reasoning = finite(complete.usage.reasoning);
   const piUsage = {
     cacheRead,
     cacheWrite,
@@ -4659,6 +4699,16 @@ class AdvisorSessionState {
 
 // src/tools/session.ts
 var advisorSessionState = new AdvisorSessionState;
+var sessionStates = new WeakMap;
+var sessionStateFor = (owner) => {
+  const existing = sessionStates.get(owner);
+  if (existing) {
+    return existing;
+  }
+  const state = new AdvisorSessionState;
+  sessionStates.set(owner, state);
+  return state;
+};
 
 // src/commands/runtime.ts
 var notify = (ctx, message, level) => {
@@ -4690,7 +4740,7 @@ class CommandRuntime {
   lastSameModelDisabled;
   constructor(pi, dependencies = {}) {
     this.pi = pi;
-    this.advisorSessionState = dependencies.sessionState ?? advisorSessionState;
+    this.advisorSessionState = dependencies.sessionState ?? sessionStateFor(pi);
     this.herdrActivity = dependencies.herdrActivity ?? herdrAdvisorActivity;
     this.scoutStatus = dependencies.statusManager ?? new ScoutStatusManager(false);
     this.requestAdvisor = dependencies.consult ?? ((ctx, question, signal, onChunk, onScout, gitContext) => consultAdvisor(ctx, question, signal, onChunk, "manual", gitContext, undefined, undefined, undefined, onScout));
@@ -5032,7 +5082,8 @@ class ManualAdvisorDialog {
   focusTarget = "editor";
   state = {
     completed: false,
-    focused: false
+    focused: false,
+    submitting: false
   };
   get focused() {
     return this.state.focused;
@@ -5204,17 +5255,22 @@ class ManualAdvisorDialog {
     return this.options.keybindings.matches(keyData, action) || matchesKey(keyData, fallback);
   }
   submit(message = this.editor.getText()) {
-    if (this.state.completed) {
+    if (this.state.completed || this.state.submitting) {
       return;
     }
-    this.state.completed = true;
+    this.state.submitting = true;
     const request = {
       gitContext: this.gitLevels[this.gitIndex] ?? "off"
     };
     if (message) {
       request.message = message;
     }
-    this.options.onSubmit(request);
+    try {
+      this.options.onSubmit(request);
+      this.state.completed = true;
+    } finally {
+      this.state.submitting = false;
+    }
   }
   cancel() {
     if (this.state.completed) {
@@ -5855,7 +5911,7 @@ var screenConsultation = (ctx, session, options, deps = {}) => {
       decision: "skip",
       kind: "repeat",
       reason: "already answered earlier in this session",
-      reattachedAdvice: reattached.slice(0, REATTACHED_ADVICE_CAP_BYTES)
+      reattachedAdvice: capUtf8Bytes(reattached, REATTACHED_ADVICE_CAP_BYTES)
     });
   }
   if (!advisorJevFilterEnabledRef) {
@@ -7368,13 +7424,19 @@ var applyAdvisorSettings = (settings) => {
   applyDisclosureSettings(settings);
 };
 var saveAdvisorSettings = (ctx, settings) => {
-  applyAdvisorSettings(settings);
-  const persisted = getPersistedModelRefs();
-  saveConfig(ctx, {
-    persistAdvisor: Boolean(persisted.advisor),
-    persistExecutor: Boolean(persisted.executor)
-  });
-  saveGlobalOutcomeLogging(settings.outcomeLogging ?? false);
+  const previous = getAdvisorSettings();
+  try {
+    applyAdvisorSettings(settings);
+    const persisted = getPersistedModelRefs();
+    saveConfig(ctx, {
+      persistAdvisor: Boolean(persisted.advisor),
+      persistExecutor: Boolean(persisted.executor)
+    });
+    saveGlobalOutcomeLogging(settings.outcomeLogging ?? false);
+  } catch (error) {
+    applyAdvisorSettings(previous);
+    throw error;
+  }
 };
 
 // src/commands/settings-commands.ts
@@ -7753,10 +7815,22 @@ import { Box as Box3, Markdown as Markdown4, Spacer, Text as Text5 } from "@eare
 var advisorResultDetails = (result) => result.details;
 var syncRenderPhase = (context, phase) => {
   if (context.state.phase !== phase && context.state.timerId) {
-    clearInterval(context.state.timerId);
+    clearTimeout(context.state.timerId);
     context.state.timerId = undefined;
   }
   context.state.phase = phase;
+};
+var scheduleRender = (context) => {
+  const timer = setTimeout(() => {
+    if (context.state.timerId !== timer) {
+      return;
+    }
+    context.state.timerId = undefined;
+    try {
+      context.invalidate();
+    } catch {}
+  }, 80);
+  context.state.timerId = timer;
 };
 var formatByteSize = (bytes) => {
   if (bytes >= 1024 ** 3) {
@@ -7796,14 +7870,7 @@ var renderPartialAdvisorResult = (box, result, expanded, theme, context) => {
   const scoutActive = scout?.status === "calling" || scout?.status === "streaming";
   syncRenderPhase(context, scoutActive ? "scout" : "advisor");
   if (!context.state.timerId) {
-    context.state.timerId = setInterval(() => {
-      try {
-        context.invalidate();
-      } catch {
-        clearInterval(context.state.timerId);
-        context.state.timerId = undefined;
-      }
-    }, 80);
+    scheduleRender(context);
   }
   if (scout) {
     renderScoutDetails(box, scout, expanded, theme);
@@ -7846,7 +7913,7 @@ var finalResultLines = (details, advice, theme) => {
 var renderFinalAdvisorResult = (box, result, expanded, theme, context) => {
   syncRenderPhase(context, "final");
   if (context.state.timerId) {
-    clearInterval(context.state.timerId);
+    clearTimeout(context.state.timerId);
     context.state.timerId = undefined;
   }
   const details = advisorResultDetails(result);
@@ -8487,7 +8554,7 @@ var registerToolRenderers = (pi) => {
 };
 
 // src/tools/registration.ts
-var registerAdvisorTool = (pi, session = advisorSessionState, dependencies = {}) => {
+var registerAdvisorTool = (pi, session = sessionStateFor(pi), dependencies = {}) => {
   const registration = {
     appendOutcome: dependencies.appendOutcome ?? appendOutcome,
     consult: dependencies.consult ?? consultAdvisor,

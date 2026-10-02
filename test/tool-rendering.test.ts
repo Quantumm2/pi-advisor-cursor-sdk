@@ -497,6 +497,31 @@ describe("Advisor tool rendering", () => {
     expect(context.state.timerId).toBeUndefined();
   });
 
+  test("stops a repaint timer when partial output is discarded", async () => {
+    const advisorTool = registerForRendering();
+    const theme = renderTheme();
+    let invalidations = 0;
+    const context = {
+      invalidate: () => {
+        invalidations += 1;
+      },
+      lastComponent: undefined,
+      state: emptyRenderState(),
+    };
+    advisorTool.renderResult(
+      { content: [], details: {} },
+      { isPartial: true },
+      theme,
+      context
+    );
+    expect(context.state.timerId).toBeDefined();
+
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
+    expect(context.state.timerId).toBeUndefined();
+    expect(invalidations).toBe(1);
+  });
+
   test("animates only while the advisor response is partial", () => {
     const advisorTool = registerForRendering();
     const theme = renderTheme();

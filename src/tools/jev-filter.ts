@@ -8,6 +8,7 @@ import {
   advisorJevFilterSkipConfidenceRef,
   isSimpleMode,
 } from "../config/state.ts";
+import { capUtf8Bytes } from "../content-utils.ts";
 import { JevFailure, jevClientFromCredentials } from "../jev/client.ts";
 import { consumePlaintextKeyWarning } from "../jev/key-store.ts";
 import {
@@ -187,7 +188,7 @@ export const screenConsultation = (
       decision: "skip",
       kind: "repeat",
       reason: "already answered earlier in this session",
-      reattachedAdvice: reattached.slice(0, REATTACHED_ADVICE_CAP_BYTES),
+      reattachedAdvice: capUtf8Bytes(reattached, REATTACHED_ADVICE_CAP_BYTES),
     });
   }
   if (!advisorJevFilterEnabledRef) {

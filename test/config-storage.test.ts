@@ -10,8 +10,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { registerCommands } from "../src/commands.ts";
+import { saveAdvisorSettings } from "../src/commands/settings-persistence.ts";
 import { CONFIG_SCHEMA, SAVED_CONFIG_KEYS } from "../src/config/schema.ts";
 import {
+  getAdvisorSettings,
   setAdvisorEffortRef,
   setAdvisorRef,
   setExecutorEffortRef,
@@ -90,6 +92,31 @@ describe("Advisor config persistence", () => {
     expect(saved.alwaysOn).toBe(true);
     expect(saved.externallyEdited).toBe("keep me");
     expect(saved.showUsageFooter).toBe(true);
+  });
+
+  test("does not replace malformed configuration during a save", () => {
+    const malformed = '{"advisor":"openai-codex/advisor",\n';
+    writeFileSync(configPath(), malformed);
+    setShowUsageFooterRef(true);
+
+    expect(() => saveConfig(context)).toThrow("malformed");
+    expect(readFileSync(configPath(), "utf-8")).toBe(malformed);
+  });
+
+  test("rolls back runtime settings when persistence fails", () => {
+    writeFileSync(
+      configPath(),
+      JSON.stringify({ advisor: "openai-codex/advisor", simpleMode: false })
+    );
+    loadConfig(context);
+    const previous = getAdvisorSettings();
+
+    rmSync(configPath(), { force: true, recursive: true });
+    mkdirSync(configPath());
+    expect(() =>
+      saveAdvisorSettings(context, { ...previous, simpleMode: true })
+    ).toThrow();
+    expect(getAdvisorSettings().simpleMode).toBe(previous.simpleMode);
   });
 
   test("persists intentional clears as deletions", () => {

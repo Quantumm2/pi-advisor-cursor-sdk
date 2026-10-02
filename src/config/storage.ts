@@ -52,6 +52,27 @@ export const readExistingConfig = (path: string): RecordValue => {
   }
 };
 
+const readConfigForSave = (path: string): RecordValue => {
+  if (!existsSync(path)) {
+    return {};
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(readFileSync(path, "utf-8"));
+  } catch (error) {
+    throw new Error(
+      `Cannot save Advisor configuration at ${path}: existing JSON is malformed; fix advisor.json before saving.`,
+      { cause: error }
+    );
+  }
+  if (!isRecord(parsed)) {
+    throw new Error(
+      `Cannot save Advisor configuration at ${path}: configuration must be a JSON object.`
+    );
+  }
+  return parsed;
+};
+
 const shouldPersistConfigKey = (
   key: SavedConfigKey,
   persistAdvisor: boolean,
@@ -197,7 +218,6 @@ export const saveConfig = (
   const path = join(getAgentDir(), "advisor.json");
   const persistAdvisor = options.persistAdvisor ?? true;
   const persistExecutor = options.persistExecutor ?? true;
-  const existing = readExistingConfig(path);
   const current = currentConfigState();
   const baseline = loadedConfigPath === path ? loadedConfigState : undefined;
   const changedKeys = baseline
@@ -208,6 +228,7 @@ export const saveConfig = (
   if (changedKeys.length === 0) {
     return path;
   }
+  const existing = readConfigForSave(path);
   const data = applyChangedConfigValues(
     existing,
     current,
@@ -240,7 +261,7 @@ export const saveConfig = (
 /** Outcome logging is deliberately written only to the global Pi configuration. */
 export const saveGlobalOutcomeLogging = (enabled: boolean) => {
   const path = join(getAgentDir(), "advisor.json");
-  const existing = readExistingConfig(path);
+  const existing = readConfigForSave(path);
   writeFileSync(
     path,
     `${JSON.stringify({ ...existing, advisorOutcomeLogging: enabled }, null, 2)}\n`

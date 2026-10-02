@@ -9,7 +9,6 @@ import { resetConfigCache } from "../src/config.ts";
 import { AdvisorSessionState } from "../src/session-state.ts";
 import {
   advisorMessageText,
-  advisorSessionState,
   parseAutomaticDecision,
   registerAdvisorTool,
 } from "../src/tools.ts";
@@ -251,10 +250,14 @@ describe("Advisor settings navigation and gate parsing regressions", () => {
 
   test("keeps a recorded session block active after ask_advisor is disabled", () => {
     const events = new Map<string, any>();
-    registerAdvisorTool(mockPi({ events }, { events: { emit: () => {} } }));
+    const state = new AdvisorSessionState();
+    registerAdvisorTool(
+      mockPi({ events }, { events: { emit: () => {} } }),
+      state
+    );
     const toolCall = events.get("tool_call");
-    advisorSessionState.resetTask();
-    advisorSessionState.block("still blocked");
+    state.resetTask();
+    state.block("still blocked");
     try {
       expect(
         toolCall(
@@ -263,12 +266,13 @@ describe("Advisor settings navigation and gate parsing regressions", () => {
         )
       ).toMatchObject({ block: true, reason: "still blocked" });
     } finally {
-      advisorSessionState.clearBlocked();
+      state.clearBlocked();
     }
   });
 
   test("does not let project Simple mode clear a stale block", async () => {
     let toolCall: any;
+    const state = new AdvisorSessionState();
     registerAdvisorTool(
       mockPi(
         {},
@@ -283,7 +287,8 @@ describe("Advisor settings navigation and gate parsing regressions", () => {
           registerMessageRenderer: () => {},
           registerTool: () => {},
         }
-      )
+      ),
+      state
     );
 
     // loadConfig runs per tool call, so the mode must come from a real file.
@@ -299,7 +304,7 @@ describe("Advisor settings navigation and gate parsing regressions", () => {
     try {
       writeFileSync(configPath, JSON.stringify({ simpleMode: false }));
       resetConfigCache();
-      advisorSessionState.block("earlier gate failure");
+      state.block("earlier gate failure");
       expect(
         toolCall({ input: {}, toolCallId: "1", toolName: "read" }, ctx)
       ).toMatchObject({ block: true });
@@ -309,9 +314,9 @@ describe("Advisor settings navigation and gate parsing regressions", () => {
       expect(
         await toolCall({ input: {}, toolCallId: "2", toolName: "read" }, ctx)
       ).toMatchObject({ block: true, reason: "earlier gate failure" });
-      expect(advisorSessionState.blocked).toBe(true);
+      expect(state.blocked).toBe(true);
     } finally {
-      advisorSessionState.clearBlocked();
+      state.clearBlocked();
       resetConfigCache();
       rmSync(projectDir, { force: true, recursive: true });
     }
