@@ -367,6 +367,88 @@ describe("Advisor consultation request construction", () => {
     }
   });
 
+  test("starts the Advisor stream only after a timed-out Scout stream settles", async () => {
+    const faux = registerFauxProvider({
+      api: "pi-advisor-scout-settle-test",
+      models: [{ id: "advisor", input: ["text"] }],
+      provider: "pi-advisor-scout-settle-test",
+    });
+    try {
+      await withAgentDir(
+        {
+          advisor: "pi-advisor-scout-settle-test/advisor",
+          advisorGitContext: "off",
+          advisorScoutEnabled: true,
+          advisorScoutTimeoutMs: 20,
+          executor: "pi-advisor-scout-settle-test/advisor",
+        },
+        async (agentDir) => {
+          const entries = [
+            {
+              id: "user-entry",
+              message: {
+                content: "Original context should remain available.",
+                role: "user",
+              },
+              parentId: null,
+              timestamp: "2026-01-01T00:00:00Z",
+              type: "message",
+            },
+          ];
+          let releaseScoutStream: (() => void) | undefined;
+          let scoutStreamSettled = false;
+          let advisorRequest = "";
+          faux.setResponses([
+            () =>
+              new Promise((resolve) => {
+                releaseScoutStream = () => {
+                  scoutStreamSettled = true;
+                  resolve(
+                    fauxAssistantMessage('{"selectedIds":[],"synthesis":""}')
+                  );
+                };
+              }),
+            (context) => {
+              advisorRequest = JSON.stringify(context.messages);
+              return fauxAssistantMessage(
+                "Advisor completed after Scout cleanup."
+              );
+            },
+          ]);
+          const resultPromise = consultAdvisor(
+            fauxContext(agentDir, faux, entries),
+            "Continue with the original conversation.",
+            undefined,
+            undefined,
+            "executor-requested"
+          );
+          await new Promise((resolve) => setTimeout(resolve, 60));
+          expect(scoutStreamSettled).toBe(false);
+          expect(faux.state.callCount).toBe(1);
+          releaseScoutStream?.();
+          const result = await resultPromise;
+          expect(scoutStreamSettled).toBe(true);
+          expect(result.markdown).toBe(
+            "Advisor completed after Scout cleanup."
+          );
+          expect(result.scout).toMatchObject({
+            category: "timeout",
+            message: "Scout timed out after 20 ms.",
+            ok: false,
+          });
+          expect(advisorRequest).toContain(
+            "User: Original context should remain available."
+          );
+          expect(faux.state.callCount).toBe(2);
+        }
+      );
+    } finally {
+      faux.unregister();
+      setAdvisorScoutEnabledRef(false);
+      setAdvisorScoutTimeoutMsRef(DEFAULT_SCOUT_TIMEOUT_MS);
+    }
+  });
+
   test("injects only the enabled invocation rules into the active prompt", async () => {
     await withAgentDir(
       {

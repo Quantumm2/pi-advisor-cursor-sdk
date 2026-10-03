@@ -3235,6 +3235,9 @@ var buildScoutManifest = (ctx, options = {}) => {
   return fitToBudget(built, caps);
 };
 
+// src/scout.ts
+import { setTimeout as delay } from "node:timers/promises";
+
 // src/usage.ts
 var finite = (value) => isNumber(value) && Number.isFinite(value) && value >= 0 ? value : undefined;
 var add = (left, right) => left === undefined || right === undefined ? left ?? right : left + right;
@@ -3397,6 +3400,7 @@ var defaultDependencies = {
   collect: collectTextStream,
   resolve: resolveConfiguredModel
 };
+var SCOUT_ABORT_SETTLE_MS = 5000;
 var byteLength2 = (value) => Buffer.byteLength(value, "utf-8");
 var AUTH_ERROR_PATTERN = /api key|auth|login|credential/iu;
 var manifestMessage = (manifest) => ({
@@ -3503,10 +3507,24 @@ var setupAbortWatch = (parentSignal, timeoutMs) => {
     wasTimedOut: () => timedOut
   };
 };
+var settleAbortedScoutCollection = async (collection, settleMs) => {
+  const timer = new AbortController;
+  try {
+    await Promise.race([
+      collection.catch(() => {
+        return;
+      }),
+      delay(settleMs, undefined, { ref: false, signal: timer.signal })
+    ]);
+  } finally {
+    timer.abort();
+  }
+};
 var streamScoutResponse = async (dependencies, resolved, executorModel, executorEffort, manifest, parentSignal, timeoutMs, publish, streamModel) => {
   const { abortPromise, controller, teardown, wasTimedOut } = setupAbortWatch(parentSignal, timeoutMs);
+  let collection;
   try {
-    const collection = dependencies.collect(resolved, {
+    collection = dependencies.collect(resolved, {
       messages: [manifestMessage(manifest)],
       onChunk: (thinking, text) => {
         if (!controller.signal.aborted) {
@@ -3522,6 +3540,9 @@ var streamScoutResponse = async (dependencies, resolved, executorModel, executor
       streamed: await Promise.race([collection, abortPromise])
     };
   } catch (error) {
+    if (collection !== undefined && controller.signal.aborted) {
+      await settleAbortedScoutCollection(collection, dependencies.abortSettleMs ?? SCOUT_ABORT_SETTLE_MS);
+    }
     const message = error instanceof Error ? error.message : String(error);
     return wasTimedOut() ? {
       category: "timeout",

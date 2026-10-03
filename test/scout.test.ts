@@ -76,6 +76,7 @@ const resolved = {
 } as ResolvedConfiguredModel;
 /** Deps fixture matching the collect/resolve signatures runAdvisorScout accepts. */
 interface ScoutDepsFixture {
+  abortSettleMs?: number;
   collect: typeof collectTextStream;
   resolve: typeof resolveConfiguredModel;
   stream?: RegisteredModelStream;
@@ -411,6 +412,65 @@ describe("Advisor Scout", () => {
     } finally {
       setAdvisorScoutTimeoutMsRef(previousTimeout);
     }
+  });
+
+  test("holds the timeout fallback until the aborted Scout stream settles", async () => {
+    let releaseCollection: (() => void) | undefined;
+    let settled = false;
+    const outcomePromise = runAdvisorScout(
+      asExtensionContext({}),
+      manifest(),
+      undefined,
+      undefined,
+      15,
+      {
+        abortSettleMs: 2000,
+        collect: () =>
+          new Promise((resolve) => {
+            releaseCollection = () => {
+              settled = true;
+              resolve({ text: "", thinking: "", usage: {} });
+            };
+          }),
+        resolve: async () => resolved,
+      }
+    );
+    let returned = false;
+    const watched = outcomePromise.then((outcome) => {
+      returned = true;
+      return outcome;
+    });
+    await new Promise((resolve) => setTimeout(resolve, 40));
+    expect(returned).toBe(false);
+    expect(settled).toBe(false);
+    releaseCollection?.();
+    const outcome = await watched;
+    expect(settled).toBe(true);
+    expect(outcome).toMatchObject({
+      category: "timeout",
+      message: "Scout timed out after 15 ms.",
+      ok: false,
+    });
+  });
+
+  test("returns the timeout fallback when the aborted Scout stream never settles", async () => {
+    const outcome = await runAdvisorScout(
+      asExtensionContext({}),
+      manifest(),
+      undefined,
+      undefined,
+      5,
+      {
+        abortSettleMs: 20,
+        collect: () => new Promise(() => {}),
+        resolve: async () => resolved,
+      }
+    );
+    expect(outcome).toMatchObject({
+      category: "timeout",
+      message: "Scout timed out after 5 ms.",
+      ok: false,
+    });
   });
 
   test("starts the timeout after model and auth resolution", async () => {

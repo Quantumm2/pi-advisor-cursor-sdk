@@ -1,3 +1,5 @@
+import { setTimeout as delay } from "node:timers/promises";
+
 import type { Message } from "@earendil-works/pi-ai/compat";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 
@@ -97,6 +99,7 @@ export type ScoutLifecycleEvent =
   | { type: "cancelled" };
 
 interface ScoutDependencies {
+  abortSettleMs?: number;
   collect: typeof collectTextStream;
   resolve: typeof resolveConfiguredModel;
   stream?: RegisteredModelStream;
@@ -106,6 +109,7 @@ const defaultDependencies: ScoutDependencies = {
   collect: collectTextStream,
   resolve: resolveConfiguredModel,
 };
+const SCOUT_ABORT_SETTLE_MS = 5000;
 const byteLength = (value: string) => Buffer.byteLength(value, "utf-8");
 const AUTH_ERROR_PATTERN = /api key|auth|login|credential/iu;
 
@@ -247,6 +251,21 @@ const setupAbortWatch = (
   };
 };
 
+const settleAbortedScoutCollection = async (
+  collection: Promise<CollectedTextStream>,
+  settleMs: number
+): Promise<void> => {
+  const timer = new AbortController();
+  try {
+    await Promise.race([
+      collection.catch(() => undefined),
+      delay(settleMs, undefined, { ref: false, signal: timer.signal }),
+    ]);
+  } finally {
+    timer.abort();
+  }
+};
+
 type ScoutStreamResult =
   | { ok: true; streamed: CollectedTextStream }
   | { ok: false; category: ScoutFallbackCategory; message: string };
@@ -266,8 +285,9 @@ const streamScoutResponse = async (
     parentSignal,
     timeoutMs
   );
+  let collection: Promise<CollectedTextStream> | undefined;
   try {
-    const collection = dependencies.collect(
+    collection = dependencies.collect(
       resolved,
       {
         messages: [manifestMessage(manifest)],
@@ -287,6 +307,12 @@ const streamScoutResponse = async (
       streamed: await Promise.race([collection, abortPromise]),
     };
   } catch (error) {
+    if (collection !== undefined && controller.signal.aborted) {
+      await settleAbortedScoutCollection(
+        collection,
+        dependencies.abortSettleMs ?? SCOUT_ABORT_SETTLE_MS
+      );
+    }
     const message = error instanceof Error ? error.message : String(error);
     return wasTimedOut()
       ? {
