@@ -37,6 +37,7 @@
   },
   "overrides": {
     "brace-expansion": "5.0.12",
+    "braces": "github:micromatch/braces#d0d575e55e74a4e0218e5248fafb79efc3e54ebb",
     "is-unicode-supported": "npm:@socketregistry/is-unicode-supported@1.0.5",
     "safe-buffer": "npm:@socketregistry/safe-buffer@1.0.9",
     "undici": "8.11.2",
@@ -442,7 +443,7 @@
 
     "brace-expansion": ["brace-expansion@5.0.12", "", { "dependencies": { "balanced-match": "^4.0.2" } }, "sha512-YovQ3rzhaLMIrDjNDMkNS01tea93qhEhG5xy8f6+R0l+dw3Ki+5sCoIoI942iuLZTHWogWktgwVDhU09iNEimQ=="],
 
-    "braces": ["braces@3.0.3", "", { "dependencies": { "fill-range": "^7.1.1" } }, "sha512-yQbXgO/OSZVD2IsiLlro+7Hf6Q18EJrKSEsdoMzKePKXct3gvD8oLcOQdIzGupr5Fj+EDe8gO/lxc1BzfMpxvA=="],
+    "braces": ["braces@github:micromatch/braces#d0d575e", { "dependencies": { "fill-range": "^7.1.1" } }, "micromatch-braces-d0d575e", "sha512-F+1N36JfZkWeCVzUk9oYTixAK9u7I7S80WgsfEbXQzHsopgzyUeV04rPwqv+gpGpXWObfjjcj4nnXmrHmx2WHw=="],
 
     "buffer-equal-constant-time": ["buffer-equal-constant-time@1.0.1", "", {}, "sha512-zRpUiDwd/xk6ADqPMATG8vc9VPrkck7T07OIx0gnjmJAnHnTVXNQG3vfvWNuiZIkwu9KrKdA1iJKfsfTVxE6NA=="],
 
