@@ -1,16 +1,21 @@
 /* biome-ignore-all lint/performance/noAwaitInLoops: table-driven async failure cases intentionally run serially. */
 /* biome-ignore-all lint/suspicious/useAwait: async dependency stubs mirror the production contract. */
-import { describe, expect, test } from "bun:test";
+import { describe, expect, spyOn, test } from "bun:test";
+
+import * as piAiCompat from "@earendil-works/pi-ai/compat";
 
 import { setExecutorEffortRef, setExecutorRef } from "../src/config.ts";
 import {
   advisorScoutTimeoutMsRef,
+  executorEffortRef,
+  executorRef,
   setAdvisorScoutTimeoutMsRef,
 } from "../src/config/state.ts";
+import { collectTextStream } from "../src/model-stream.ts";
 import type {
   CollectTextStreamOptions,
+  RegisteredModelStream,
   ResolvedConfiguredModel,
-  collectTextStream,
   resolveConfiguredModel,
 } from "../src/model-stream.ts";
 import type { ScoutManifest } from "../src/scout-context.ts";
@@ -21,6 +26,11 @@ import {
 } from "../src/scout.ts";
 import { scoutDetailsFromEvent, ScoutStatusManager } from "../src/tools.ts";
 import { asExtensionContext } from "./helpers/extension-context.ts";
+import {
+  recordingStream,
+  scriptedTextStream,
+} from "./helpers/scripted-text-stream.ts";
+import type { RecordedStreamCall } from "./helpers/scripted-text-stream.ts";
 
 const manifest = (): ScoutManifest => ({
   availableBytes: 100,
@@ -66,8 +76,10 @@ const resolved = {
 } as ResolvedConfiguredModel;
 /** Deps fixture matching the collect/resolve signatures runAdvisorScout accepts. */
 interface ScoutDepsFixture {
+  abortSettleMs?: number;
   collect: typeof collectTextStream;
   resolve: typeof resolveConfiguredModel;
+  stream?: RegisteredModelStream;
 }
 
 const successDependencies = (
@@ -402,6 +414,65 @@ describe("Advisor Scout", () => {
     }
   });
 
+  test("holds the timeout fallback until the aborted Scout stream settles", async () => {
+    let releaseCollection: (() => void) | undefined;
+    let settled = false;
+    const outcomePromise = runAdvisorScout(
+      asExtensionContext({}),
+      manifest(),
+      undefined,
+      undefined,
+      15,
+      {
+        abortSettleMs: 2000,
+        collect: () =>
+          new Promise((resolve) => {
+            releaseCollection = () => {
+              settled = true;
+              resolve({ text: "", thinking: "", usage: {} });
+            };
+          }),
+        resolve: async () => resolved,
+      }
+    );
+    let returned = false;
+    const watched = outcomePromise.then((outcome) => {
+      returned = true;
+      return outcome;
+    });
+    await new Promise((resolve) => setTimeout(resolve, 40));
+    expect(returned).toBe(false);
+    expect(settled).toBe(false);
+    releaseCollection?.();
+    const outcome = await watched;
+    expect(settled).toBe(true);
+    expect(outcome).toMatchObject({
+      category: "timeout",
+      message: "Scout timed out after 15 ms.",
+      ok: false,
+    });
+  });
+
+  test("returns the timeout fallback when the aborted Scout stream never settles", async () => {
+    const outcome = await runAdvisorScout(
+      asExtensionContext({}),
+      manifest(),
+      undefined,
+      undefined,
+      5,
+      {
+        abortSettleMs: 20,
+        collect: () => new Promise(() => {}),
+        resolve: async () => resolved,
+      }
+    );
+    expect(outcome).toMatchObject({
+      category: "timeout",
+      message: "Scout timed out after 5 ms.",
+      ok: false,
+    });
+  });
+
   test("starts the timeout after model and auth resolution", async () => {
     const previousTimeout = advisorScoutTimeoutMsRef;
     setAdvisorScoutTimeoutMsRef(5);
@@ -491,6 +562,173 @@ describe("Advisor Scout", () => {
       metrics: { availableCount: 3, omittedBeforeScout: 1, selectedCount: 0 },
       ok: false,
     });
+  });
+
+  test("routes Scout through the registered provider for cursor and native models", async () => {
+    const previousChild = process.env.PI_SUBAGENT_CHILD;
+    const previousExecutor = executorRef;
+    const previousEffort = executorEffortRef;
+    delete process.env.PI_SUBAGENT_CHILD;
+    const streamSpy = spyOn(piAiCompat, "stream");
+    const scoutJson = JSON.stringify({
+      selectedIds: ["g_required"],
+      synthesis: "Kept the current task.",
+    });
+    try {
+      for (const api of ["cursor-sdk", "anthropic-messages"] as const) {
+        const calls: RecordedStreamCall[] = [];
+        const configured = {
+          api,
+          id: api,
+          input: ["text"],
+          provider: "provider",
+        };
+        setExecutorRef(`provider/${api}`);
+        setExecutorEffortRef("high");
+        const outcome = await runAdvisorScout(
+          asExtensionContext({
+            modelRegistry: {
+              find: () => configured,
+              getApiKeyAndHeaders: () =>
+                Promise.resolve({
+                  apiKey: "resolved-key",
+                  env: { REGION: "test" },
+                  headers: { "x-test": "yes" },
+                  ok: true as const,
+                }),
+              streamSimple: recordingStream(scoutJson, calls),
+            },
+          }),
+          manifest(),
+          undefined,
+          undefined,
+          1000
+        );
+        expect(outcome.ok).toBe(true);
+        expect(calls).toHaveLength(1);
+        expect(calls[0]?.model).toBe(configured);
+        expect(calls[0]?.context.systemPrompt).toBe(SCOUT_SYSTEM);
+        expect(calls[0]?.options).toMatchObject({
+          apiKey: "resolved-key",
+          env: { REGION: "test" },
+          headers: { "x-test": "yes" },
+          reasoning: "high",
+        });
+        expect(calls[0]?.options).not.toHaveProperty("reasoningEffort");
+      }
+
+      for (const effort of [undefined, "off"] as const) {
+        const calls: RecordedStreamCall[] = [];
+        setExecutorEffortRef(effort);
+        await runAdvisorScout(
+          asExtensionContext({
+            modelRegistry: {
+              find: () => ({
+                api: "openai-completions",
+                id: "gpt",
+                input: ["text"],
+                provider: "openai",
+              }),
+              getApiKeyAndHeaders: () =>
+                Promise.resolve({ apiKey: "resolved-key", ok: true as const }),
+              streamSimple: recordingStream(scoutJson, calls),
+            },
+          }),
+          manifest(),
+          undefined,
+          undefined,
+          1000
+        );
+        expect(calls[0]?.options).toMatchObject({ apiKey: "resolved-key" });
+        expect(calls[0]?.options).not.toHaveProperty("reasoning");
+        expect(calls[0]?.options).not.toHaveProperty("reasoningEffort");
+      }
+
+      setExecutorRef("cursor/grok-4.7@256k");
+      const thrown = await runAdvisorScout(
+        asExtensionContext({
+          modelRegistry: {
+            find: () => ({
+              api: "cursor-sdk",
+              id: "grok-4.7@256k",
+              input: ["text"],
+              provider: "cursor",
+            }),
+            getApiKeyAndHeaders: () =>
+              Promise.resolve({ apiKey: "placeholder", ok: true as const }),
+            streamSimple: () => {
+              throw new Error("No API provider registered for api: cursor-sdk");
+            },
+          },
+        }),
+        manifest(),
+        undefined,
+        undefined,
+        1000
+      );
+      expect(thrown).toMatchObject({
+        category: "provider-error",
+        message: "No API provider registered for api: cursor-sdk",
+        ok: false,
+      });
+
+      const served: RecordedStreamCall[] = [];
+      const servedOutcome = await runAdvisorScout(
+        asExtensionContext({
+          modelRegistry: {
+            find: () => ({
+              api: "cursor-sdk",
+              id: "grok-4.7@256k",
+              input: ["text"],
+              provider: "cursor",
+            }),
+            getApiKeyAndHeaders: () =>
+              Promise.resolve({ apiKey: "placeholder", ok: true as const }),
+            streamSimple: recordingStream(scoutJson, served),
+          },
+        }),
+        manifest(),
+        undefined,
+        undefined,
+        1000
+      );
+      expect(served).toHaveLength(1);
+      expect(servedOutcome.ok).toBe(true);
+
+      let registryCalls = 0;
+      const injected = await runAdvisorScout(
+        asExtensionContext({
+          modelRegistry: {
+            streamSimple: () => {
+              registryCalls += 1;
+              throw new Error("registry must not run");
+            },
+          },
+        }),
+        manifest(),
+        undefined,
+        undefined,
+        1000,
+        {
+          collect: collectTextStream,
+          resolve: () => Promise.resolve(resolved),
+          // SAFETY: fake stream exposes only the iterator and result() members collectTextStream reads.
+          stream: (() => scriptedTextStream(scoutJson)) as any,
+        }
+      );
+      expect(registryCalls).toBe(0);
+      expect(injected.ok).toBe(true);
+      expect(streamSpy).not.toHaveBeenCalled();
+    } finally {
+      streamSpy.mockRestore();
+      setExecutorRef(previousExecutor);
+      setExecutorEffortRef(previousEffort);
+      if (previousChild === undefined) {
+        delete process.env.PI_SUBAGENT_CHILD;
+      } else {
+        process.env.PI_SUBAGENT_CHILD = previousChild;
+      }
+    }
   });
 });
 

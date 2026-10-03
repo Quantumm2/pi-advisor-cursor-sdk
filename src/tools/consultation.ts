@@ -268,13 +268,18 @@ const runAdvisorAttempt = async (
   resolved: Awaited<ReturnType<typeof resolveConfiguredModel>>,
   modelRef: string
 ): Promise<CollectedAdvisorResponse> => {
-  const streamed = await collectTextStream(resolved, {
-    messages: structuredClone(prepared.messages),
-    onChunk: options.onChunk,
-    reasoning: advisorEffortRef,
-    signal: options.signal,
-    systemPrompt: prepared.systemPrompt,
-  });
+  const streamed = await collectTextStream(
+    resolved,
+    {
+      messages: structuredClone(prepared.messages),
+      onChunk: options.onChunk,
+      reasoning: advisorEffortRef,
+      signal: options.signal,
+      systemPrompt: prepared.systemPrompt,
+    },
+    (model, context, streamOptions) =>
+      options.ctx.modelRegistry.streamSimple(model, context, streamOptions)
+  );
   const { text: markdown } = streamed;
   if (!markdown.trim()) {
     throw new AdvisorNoAdviceError();

@@ -42,7 +42,7 @@
     "lint:fix": "oxlint --fix",
     "prepack": "bun run build >/dev/null",
     "package:check": "node scripts/check-package.mjs",
-    "prepare": "husky",
+    "prepare": "node scripts/prepare.mjs",
     "socket": "bunx socket optimize",
     "test": "bun test && bun run test:node-loader",
     "test:bench": "bun --config=./bunfig.bench.toml test ./bench/test/",

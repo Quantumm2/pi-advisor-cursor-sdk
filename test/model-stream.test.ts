@@ -1,14 +1,15 @@
 import { describe, expect, test } from "bun:test";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+
+import type { Message } from "@earendil-works/pi-ai";
 
 import {
   collectTextStream,
   createCoalescedUpdate,
   resolveConfiguredModel,
 } from "../src/model-stream.ts";
-import type {
-  CoalescedUpdateScheduler,
-  CollectTextStreamOptions,
-} from "../src/model-stream.ts";
+import type { CoalescedUpdateScheduler } from "../src/model-stream.ts";
 import { asExtensionContext } from "./helpers/extension-context.ts";
 
 // SAFETY: fixture mirrors the catalogue fields stream() reads; "test-api" is a synthetic Api label.
@@ -65,14 +66,14 @@ const assistant = (
   return message;
 };
 
-// SAFETY: mock mirrors the stream() async-iterator and result() surface collectTextStream consumes.
+// SAFETY: mock mirrors the async-iterator and result() surface collectTextStream consumes.
 const fakeStream = (
   events: any[],
   result: any,
-  capture?: (options: CollectTextStreamOptions) => void
+  capture?: (model: any, context: any, options: any) => void
 ) =>
-  ((_model: any, _context: any, options: CollectTextStreamOptions) => {
-    capture?.(options);
+  ((streamModel: any, context: any, options: any) => {
+    capture?.(streamModel, context, options);
     return {
       async *[Symbol.asyncIterator]() {
         await Promise.resolve();
@@ -229,7 +230,12 @@ describe("model stream", () => {
 
   test("preserves stream options, chunk order, final text, and usage", async () => {
     const chunks: string[] = [];
+    let modelSeen: any;
+    let contextSeen: any;
     let optionsSeen: any;
+    const messages: Message[] = [
+      { content: "question", role: "user", timestamp: 1 },
+    ];
     const { signal } = new AbortController();
     const result = await collectTextStream(
       {
@@ -240,7 +246,7 @@ describe("model stream", () => {
         ref: "provider/model",
       },
       {
-        messages: [],
+        messages,
         onChunk: (thinking, text) => chunks.push(`${thinking}|${text}`),
         reasoning: "high",
         signal,
@@ -252,7 +258,9 @@ describe("model stream", () => {
           { delta: "partial", type: "text_delta" },
         ],
         assistant("final", { input: 3 }),
-        (options) => {
+        (seenModel, context, options) => {
+          modelSeen = seenModel;
+          contextSeen = context;
           optionsSeen = options;
         }
       )
@@ -263,26 +271,41 @@ describe("model stream", () => {
       thinking: "think",
       usage: { input: 3 },
     });
-    expect(optionsSeen).toMatchObject({
+    expect(modelSeen).toBe(model);
+    expect(contextSeen).toEqual({ messages, systemPrompt: "system" });
+    expect(optionsSeen).toEqual({
       apiKey: "key",
       env: { REGION: "test" },
       headers: { header: "value" },
       reasoning: "high",
-      reasoningEffort: "high",
       signal,
     });
   });
 
-  test("omits provider effort when it is not configured", async () => {
-    let optionsSeen: CollectTextStreamOptions | undefined;
-    await collectTextStream(
-      { apiKey: "key", model, ref: "provider/model" },
-      { messages: [], systemPrompt: "system" },
-      fakeStream([], assistant("ok"), (options) => {
-        optionsSeen = options;
-      })
+  test("omits reasoning when effort is unset or off", async () => {
+    for (const reasoning of [undefined, "off"] as const) {
+      let optionsSeen:
+        | { reasoning?: string; reasoningEffort?: string }
+        | undefined;
+      await collectTextStream(
+        { apiKey: "key", model, ref: "provider/model" },
+        { messages: [], reasoning, systemPrompt: "system" },
+        fakeStream([], assistant("ok"), (_model, _context, options) => {
+          optionsSeen = options;
+        })
+      );
+      expect(optionsSeen).not.toHaveProperty("reasoning");
+      expect(optionsSeen).not.toHaveProperty("reasoningEffort");
+    }
+  });
+
+  test("does not import the compat stream dispatcher", () => {
+    const source = readFileSync(
+      fileURLToPath(new URL("../src/model-stream.ts", import.meta.url)),
+      "utf-8"
     );
-    expect(optionsSeen).not.toHaveProperty("reasoningEffort");
+    expect(source).not.toContain("@earendil-works/pi-ai/compat");
+    expect(source).not.toContain("reasoningEffort");
   });
 
   test("rejects partial text from terminal provider failures", async () => {

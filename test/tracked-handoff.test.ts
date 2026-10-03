@@ -14,6 +14,7 @@ import { AdvisorSessionState } from "../src/session-state.ts";
 import { registerAdvisorTool } from "../src/tools.ts";
 import { withAgentDir } from "./helpers/config-fixture.ts";
 import { asExtensionContext } from "./helpers/extension-context.ts";
+import { fauxRegistryStream } from "./helpers/faux-registry-stream.ts";
 import { mockPi } from "./helpers/mock-pi.ts";
 
 const registerHandoffTool = (
@@ -217,6 +218,7 @@ describe("Tracked file handoff", () => {
               find: () => faux.models[0],
               getApiKeyAndHeaders: () =>
                 Promise.resolve({ apiKey: "key", ok: true }),
+              streamSimple: fauxRegistryStream,
             },
             sessionManager: { getBranch: () => [] },
           });
