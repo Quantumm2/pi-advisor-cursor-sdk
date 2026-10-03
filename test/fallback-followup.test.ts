@@ -17,6 +17,7 @@ import { AdvisorSessionState } from "../src/session-state.ts";
 import { consultAdvisor, registerAdvisorTool } from "../src/tools.ts";
 import { withAgentDir } from "./helpers/config-fixture.ts";
 import { asExtensionContext } from "./helpers/extension-context.ts";
+import { fauxRegistryStream } from "./helpers/faux-registry-stream.ts";
 import { mockPi } from "./helpers/mock-pi.ts";
 
 const fauxContext = (cwd: string, faux: any, model?: string, trusted = false) =>
@@ -30,6 +31,7 @@ const fauxContext = (cwd: string, faux: any, model?: string, trusted = false) =>
         faux.models.find((candidate: any) => candidate.id === id),
       getApiKeyAndHeaders: () =>
         Promise.resolve({ apiKey: "key", ok: true as const }),
+      streamSimple: fauxRegistryStream,
     },
     sessionManager: { getBranch: () => [] },
   });

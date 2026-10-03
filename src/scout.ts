@@ -10,6 +10,7 @@ import { isRecord, isString } from "./content-utils.ts";
 import { collectTextStream, resolveConfiguredModel } from "./model-stream.ts";
 import type {
   CollectedTextStream,
+  RegisteredModelStream,
   ResolvedConfiguredModel,
 } from "./model-stream.ts";
 import { groupWire } from "./scout-groups.ts";
@@ -98,6 +99,7 @@ export type ScoutLifecycleEvent =
 interface ScoutDependencies {
   collect: typeof collectTextStream;
   resolve: typeof resolveConfiguredModel;
+  stream?: RegisteredModelStream;
 }
 
 const defaultDependencies: ScoutDependencies = {
@@ -257,24 +259,29 @@ const streamScoutResponse = async (
   manifest: ScoutManifest,
   parentSignal: AbortSignal | undefined,
   timeoutMs: number,
-  publish: (event: ScoutLifecycleEvent) => void
+  publish: (event: ScoutLifecycleEvent) => void,
+  streamModel: RegisteredModelStream
 ): Promise<ScoutStreamResult> => {
   const { abortPromise, controller, teardown, wasTimedOut } = setupAbortWatch(
     parentSignal,
     timeoutMs
   );
   try {
-    const collection = dependencies.collect(resolved, {
-      messages: [manifestMessage(manifest)],
-      onChunk: (thinking, text) => {
-        if (!controller.signal.aborted) {
-          publish({ model: executorModel, text, thinking, type: "chunk" });
-        }
+    const collection = dependencies.collect(
+      resolved,
+      {
+        messages: [manifestMessage(manifest)],
+        onChunk: (thinking, text) => {
+          if (!controller.signal.aborted) {
+            publish({ model: executorModel, text, thinking, type: "chunk" });
+          }
+        },
+        reasoning: executorEffort,
+        signal: controller.signal,
+        systemPrompt: SCOUT_SYSTEM,
       },
-      reasoning: executorEffort,
-      signal: controller.signal,
-      systemPrompt: SCOUT_SYSTEM,
-    });
+      streamModel
+    );
     return {
       ok: true,
       streamed: await Promise.race([collection, abortPromise]),
@@ -350,6 +357,10 @@ export const runAdvisorScout = async (
   }
   publish({ model: executorModel, type: "call" });
 
+  const streamModel =
+    dependencies.stream ??
+    ((model, context, options) =>
+      ctx.modelRegistry.streamSimple(model, context, options));
   const streamed = await streamScoutResponse(
     dependencies,
     resolved,
@@ -358,7 +369,8 @@ export const runAdvisorScout = async (
     manifest,
     parentSignal,
     timeoutMs,
-    publish
+    publish,
+    streamModel
   );
   if (!streamed.ok) {
     if (parentSignal?.aborted) {

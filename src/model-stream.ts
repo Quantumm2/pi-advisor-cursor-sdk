@@ -1,10 +1,13 @@
-import { stream } from "@earendil-works/pi-ai/compat";
 import type {
   Api,
   AssistantMessage,
+  AssistantMessageEventStream,
+  Context,
   Message,
   Model,
-} from "@earendil-works/pi-ai/compat";
+  SimpleStreamOptions,
+  ThinkingLevel,
+} from "@earendil-works/pi-ai";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 
 import { splitRef } from "./config/state.ts";
@@ -60,6 +63,29 @@ export interface CollectedTextStream {
   thinking: string;
   usage?: unknown;
 }
+
+export type RegisteredModelStream = (
+  model: Model<Api>,
+  context: Context,
+  options?: SimpleStreamOptions
+) => AssistantMessageEventStream;
+
+const THINKING_LEVELS = {
+  high: true,
+  low: true,
+  max: true,
+  medium: true,
+  minimal: true,
+  xhigh: true,
+} as const satisfies Record<ThinkingLevel, true>;
+
+const isThinkingLevel = (effort: string): effort is ThinkingLevel =>
+  Object.hasOwn(THINKING_LEVELS, effort);
+
+const streamReasoning = (
+  effort: string | undefined
+): ThinkingLevel | undefined =>
+  effort !== undefined && isThinkingLevel(effort) ? effort : undefined;
 
 export const ADVISOR_STREAM_UPDATE_INTERVAL_MS = 90;
 
@@ -182,21 +208,19 @@ export const createCoalescedUpdate = <T>(
 export const collectTextStream = async (
   resolved: ResolvedConfiguredModel,
   options: CollectTextStreamOptions,
-  streamModel: typeof stream = stream
+  streamModel: RegisteredModelStream
 ): Promise<CollectedTextStream> => {
   let thinking = "";
   let text = "";
-  const streamOptions: Parameters<typeof streamModel>[2] = {
+  const streamOptions: SimpleStreamOptions = {
     apiKey: resolved.apiKey,
     env: resolved.env,
     headers: resolved.headers,
-    // SAFETY: stream() models the provider-facing reasoning field as never; options.reasoning is the Pi-facing effort string.
-    reasoning: options.reasoning as never,
     signal: options.signal,
   };
-  if (options.reasoning !== undefined) {
-    // SAFETY: reasoningEffort takes the same effort string; kept absent when reasoning is unset.
-    streamOptions.reasoningEffort = options.reasoning as never;
+  const reasoning = streamReasoning(options.reasoning);
+  if (reasoning !== undefined) {
+    streamOptions.reasoning = reasoning;
   }
   const eventStream = streamModel(
     resolved.model,

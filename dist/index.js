@@ -1843,7 +1843,6 @@ var herdrAdvisorBlock = new HerdrAdvisorBlock(sendToHerdr, () => getAdvisorSetti
 import { randomUUID as randomUUID2 } from "node:crypto";
 
 // src/model-stream.ts
-import { stream } from "@earendil-works/pi-ai/compat";
 var resolveConfiguredModel = async (ctx, ref, label) => {
   if (!ref) {
     throw new Error(`${label} model not configured`);
@@ -1869,6 +1868,16 @@ var resolveConfiguredModel = async (ctx, ref, label) => {
     ref
   };
 };
+var THINKING_LEVELS = {
+  high: true,
+  low: true,
+  max: true,
+  medium: true,
+  minimal: true,
+  xhigh: true
+};
+var isThinkingLevel = (effort) => Object.hasOwn(THINKING_LEVELS, effort);
+var streamReasoning = (effort) => effort !== undefined && isThinkingLevel(effort) ? effort : undefined;
 var ADVISOR_STREAM_UPDATE_INTERVAL_MS = 90;
 var defaultScheduler = {
   clearTimeout,
@@ -1949,18 +1958,18 @@ var createCoalescedUpdate = (publish, intervalMs = ADVISOR_STREAM_UPDATE_INTERVA
     }
   };
 };
-var collectTextStream = async (resolved, options, streamModel = stream) => {
+var collectTextStream = async (resolved, options, streamModel) => {
   let thinking = "";
   let text = "";
   const streamOptions = {
     apiKey: resolved.apiKey,
     env: resolved.env,
     headers: resolved.headers,
-    reasoning: options.reasoning,
     signal: options.signal
   };
-  if (options.reasoning !== undefined) {
-    streamOptions.reasoningEffort = options.reasoning;
+  const reasoning = streamReasoning(options.reasoning);
+  if (reasoning !== undefined) {
+    streamOptions.reasoning = reasoning;
   }
   const eventStream = streamModel(resolved.model, { messages: options.messages, systemPrompt: options.systemPrompt }, streamOptions);
   for await (const event of eventStream) {
@@ -3494,7 +3503,7 @@ var setupAbortWatch = (parentSignal, timeoutMs) => {
     wasTimedOut: () => timedOut
   };
 };
-var streamScoutResponse = async (dependencies, resolved, executorModel, executorEffort, manifest, parentSignal, timeoutMs, publish) => {
+var streamScoutResponse = async (dependencies, resolved, executorModel, executorEffort, manifest, parentSignal, timeoutMs, publish, streamModel) => {
   const { abortPromise, controller, teardown, wasTimedOut } = setupAbortWatch(parentSignal, timeoutMs);
   try {
     const collection = dependencies.collect(resolved, {
@@ -3507,7 +3516,7 @@ var streamScoutResponse = async (dependencies, resolved, executorModel, executor
       reasoning: executorEffort,
       signal: controller.signal,
       systemPrompt: SCOUT_SYSTEM
-    });
+    }, streamModel);
     return {
       ok: true,
       streamed: await Promise.race([collection, abortPromise])
@@ -3562,7 +3571,8 @@ var runAdvisorScout = async (ctx, manifest, parentSignal, onEvent, timeoutMs = a
     return cancelled();
   }
   publish({ model: executorModel, type: "call" });
-  const streamed = await streamScoutResponse(dependencies, resolved, executorModel, executorEffort, manifest, parentSignal, timeoutMs, publish);
+  const streamModel = dependencies.stream ?? ((model, context, options) => ctx.modelRegistry.streamSimple(model, context, options));
+  const streamed = await streamScoutResponse(dependencies, resolved, executorModel, executorEffort, manifest, parentSignal, timeoutMs, publish, streamModel);
   if (!streamed.ok) {
     if (parentSignal?.aborted) {
       return cancelled();
@@ -4046,7 +4056,7 @@ var runAdvisorAttempt = async (options, prepared, resolved, modelRef) => {
     reasoning: advisorEffortRef,
     signal: options.signal,
     systemPrompt: prepared.systemPrompt
-  });
+  }, (model, context, streamOptions) => options.ctx.modelRegistry.streamSimple(model, context, streamOptions));
   const { text: markdown } = streamed;
   if (!markdown.trim()) {
     throw new AdvisorNoAdviceError;

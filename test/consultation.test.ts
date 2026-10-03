@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, spyOn, test } from "bun:test";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -7,6 +7,7 @@ import {
   fauxAssistantMessage,
   registerFauxProvider,
 } from "@earendil-works/pi-ai/compat";
+import * as piAiCompat from "@earendil-works/pi-ai/compat";
 import type { BeforeAgentStartEvent } from "@earendil-works/pi-coding-agent";
 
 import registerExtension, {
@@ -14,6 +15,7 @@ import registerExtension, {
   runAdvisorGate,
 } from "../extensions/index.ts";
 import {
+  setAdvisorEffortRef,
   setAdvisorRedactSecretsRef,
   setAdvisorScoutEnabledRef,
   setAdvisorToolPoliciesRef,
@@ -23,7 +25,10 @@ import { DEFAULT_SCOUT_TIMEOUT_MS } from "../src/config/types.ts";
 import { advisorRequestConversation } from "../src/tools.ts";
 import { withAgentDir } from "./helpers/config-fixture.ts";
 import { asExtensionContext } from "./helpers/extension-context.ts";
+import { fauxRegistryStream } from "./helpers/faux-registry-stream.ts";
 import { mockPi } from "./helpers/mock-pi.ts";
+import { recordingStream } from "./helpers/scripted-text-stream.ts";
+import type { RecordedStreamCall } from "./helpers/scripted-text-stream.ts";
 
 type PromptSections = BeforeAgentStartEvent["systemPromptOptions"]["sections"];
 
@@ -39,12 +44,35 @@ const fauxContext = (
     modelRegistry: {
       find: () => faux.models[0],
       getApiKeyAndHeaders: () => Promise.resolve({ apiKey: "key", ok: true }),
+      streamSimple: fauxRegistryStream,
     },
     sessionManager: {
       buildContextEntries: () => entries,
       getBranch: () => entries,
     },
   });
+
+const configuredModel = (ref: string, api: string) => ({
+  api,
+  id: ref.slice(ref.indexOf("/") + 1),
+  input: ["text"],
+  provider: ref.slice(0, ref.indexOf("/")),
+});
+
+const registryFor = (
+  model: ReturnType<typeof configuredModel>,
+  calls: RecordedStreamCall[]
+) => ({
+  find: () => model,
+  getApiKeyAndHeaders: () =>
+    Promise.resolve({
+      apiKey: "resolved-key",
+      env: { REGION: "test" },
+      headers: { "x-test": "yes" },
+      ok: true as const,
+    }),
+  streamSimple: recordingStream("Advice", calls),
+});
 
 describe("Advisor consultation request construction", () => {
   test("forwards trusted project and global AGENTS.md context with byte accounting", async () => {
@@ -413,5 +441,108 @@ describe("Advisor consultation request construction", () => {
       );
       expect(sections).toEqual({ mcp_servers: "servers" });
     });
+  });
+
+  test("routes Advisor calls through the registered model provider", async () => {
+    const streamSpy = spyOn(piAiCompat, "stream");
+    try {
+      for (const [ref, api] of [
+        ["cursor/glm-5p3", "cursor-sdk"],
+        ["anthropic/claude-sonnet", "anthropic-messages"],
+        ["openai/gpt", "openai-completions"],
+      ] as const) {
+        const calls: RecordedStreamCall[] = [];
+        const model = configuredModel(ref, api);
+        await withAgentDir(
+          {
+            advisor: ref,
+            advisorAgentsMdContext: false,
+            advisorEffort: "high",
+            advisorGitContext: "off",
+          },
+          async (agentDir) => {
+            const result = await consultAdvisor(
+              asExtensionContext({
+                cwd: agentDir,
+                isProjectTrusted: () => false,
+                modelRegistry: registryFor(model, calls),
+                sessionManager: { getBranch: () => [] },
+              }),
+              "Review the decision."
+            );
+            expect(result.markdown).toBe("Advice");
+          }
+        );
+        expect(calls).toHaveLength(1);
+        expect(calls[0]?.model).toBe(model);
+        expect(calls[0]?.context.systemPrompt).toEqual(expect.any(String));
+        expect(Array.isArray(calls[0]?.context.messages)).toBe(true);
+        expect(calls[0]?.options).toEqual({
+          apiKey: "resolved-key",
+          env: { REGION: "test" },
+          headers: { "x-test": "yes" },
+          reasoning: "high",
+          signal: undefined,
+        });
+      }
+
+      const omitted: RecordedStreamCall[] = [];
+      await withAgentDir(
+        {
+          advisor: "cursor/glm-5p3",
+          advisorAgentsMdContext: false,
+          advisorEffort: "off",
+          advisorGitContext: "off",
+        },
+        async (agentDir) => {
+          await consultAdvisor(
+            asExtensionContext({
+              cwd: agentDir,
+              isProjectTrusted: () => false,
+              modelRegistry: registryFor(
+                configuredModel("cursor/glm-5p3", "cursor-sdk"),
+                omitted
+              ),
+              sessionManager: { getBranch: () => [] },
+            })
+          );
+        }
+      );
+      expect(omitted[0]?.options).toMatchObject({ apiKey: "resolved-key" });
+      expect(omitted[0]?.options).not.toHaveProperty("reasoning");
+      expect(omitted[0]?.options).not.toHaveProperty("reasoningEffort");
+
+      const unset: RecordedStreamCall[] = [];
+      setAdvisorEffortRef(undefined);
+      await withAgentDir(
+        {
+          advisor: "anthropic/claude-sonnet",
+          advisorAgentsMdContext: false,
+          advisorGitContext: "off",
+        },
+        async (agentDir) => {
+          setAdvisorEffortRef(undefined);
+          await consultAdvisor(
+            asExtensionContext({
+              cwd: agentDir,
+              isProjectTrusted: () => false,
+              modelRegistry: registryFor(
+                configuredModel(
+                  "anthropic/claude-sonnet",
+                  "anthropic-messages"
+                ),
+                unset
+              ),
+              sessionManager: { getBranch: () => [] },
+            })
+          );
+        }
+      );
+      expect(unset[0]?.options).not.toHaveProperty("reasoning");
+      expect(unset[0]?.options).not.toHaveProperty("reasoningEffort");
+      expect(streamSpy).not.toHaveBeenCalled();
+    } finally {
+      streamSpy.mockRestore();
+    }
   });
 });

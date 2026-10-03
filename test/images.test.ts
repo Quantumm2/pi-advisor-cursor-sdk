@@ -21,6 +21,7 @@ import { ADVISOR_IMAGE_MAX_BYTES, imageFromPart } from "../src/images.ts";
 import { consultAdvisor } from "../src/tools/consultation.ts";
 import { withAgentDir } from "./helpers/config-fixture.ts";
 import { asExtensionContext } from "./helpers/extension-context.ts";
+import { fauxRegistryStream } from "./helpers/faux-registry-stream.ts";
 
 const png =
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg==";
@@ -42,6 +43,7 @@ const contextFor = (cwd: string, faux: any, entries: object[]) =>
     modelRegistry: {
       find: () => faux.models[0],
       getApiKeyAndHeaders: () => Promise.resolve({ apiKey: "key", ok: true }),
+      streamSimple: fauxRegistryStream,
     },
     sessionManager: {
       buildContextEntries: () => entries,
